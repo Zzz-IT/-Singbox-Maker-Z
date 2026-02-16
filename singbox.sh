@@ -293,16 +293,9 @@ _add_argo_vless_ws() {
         echo ""
         read -p "请输入该 Tunnel 绑定的域名 (例如 tunnel.example.com): " domain
         if [ -z "$domain" ]; then _error "域名不能为空"; return 1; fi
-        
-        echo ""
-        echo -e "${YELLOW} 重要提示：配置回源${NC} "
-        echo "  请回到 Cloudflare Tunnel 页面，点击 Next 进入 'Public Hostname' 设置："
-        echo "  1. Public Hostname: 填写您刚才输入的域名 -> ${domain}"
-        echo "  2. Service -> Type: 选择 HTTP"
-        echo "  3. Service -> URL:  填写 localhost:${port}"
-        echo "  4. 点击 Save Tunnel 保存"
-        echo ""
-        read -n 1 -s -r -p "确认配置无误后，按任意键继续..."
+       
+        echo -e "${YELLOW} 请去 CF 配置回源 Public Hostname: ${domain} -> Service: http://localhost:${port}${NC}"
+        read -n 1 -s -r -p "按任意键继续..."
         echo ""
     fi
 
@@ -528,23 +521,56 @@ _uninstall_argo() {
     _disable_argo_watchdog; rm -f "${CLOUDFLARED_BIN}" "${ARGO_METADATA_FILE}" /tmp/singbox_argo_*; rm -rf "/etc/cloudflared"; _manage_service "restart"; _success "已卸载"
 }
 _argo_menu() {
+    # 颜色定义放循环外，稍微提高一点性能
+    local CYAN='\033[0;36m'
+    local WHITE='\033[1;37m'
+    local GREY='\033[0;37m'
+    local NC='\033[0m'
+
     while true; do
         clear
-        echo -e "${CYAN}╔══════════════════════════════════════════════════╗${NC}"
-        echo -e "${CYAN}║                 Argo 隧道管理                    ║${NC}"
-        echo -e "${CYAN}╚══════════════════════════════════════════════════╝${NC}"
-        echo -e " ${GREEN}[1]${NC} VLESS-WS + Argo"
-        echo -e " ${GREEN}[2]${NC} Trojan-WS + Argo"
-        echo -e " ${GREEN}[3]${NC} 查看 Argo 节点"
-        echo -e " ${GREEN}[4]${NC} 删除 Argo 节点"
-        echo -e " ${GREEN}[5]${NC} 重启隧道"
-        echo -e " ${GREEN}[6]${NC} 停止隧道"
-        echo -e " ${RED}[7]${NC} 卸载 Argo 服务"
-        echo -e " --------------------------------------------------"
-        echo -e " ${YELLOW}[0]${NC} 返回主菜单"
-        read -p "选择: " c; case $c in 1) _add_argo_vless_ws;; 2) _add_argo_trojan_ws;; 3) _view_argo_nodes;; 4) _delete_argo_node;; 5) _restart_argo_tunnel_menu;; 6) _stop_argo_menu;; 7) _uninstall_argo;; 0) return;; esac; read -n 1 -s -r -p "按任意键继续..."; done
-}
+        # 顶部留白
+        echo -e "\n\n\n"
 
+        # 标题区
+        echo -e "  ${CYAN}A R G O   T U N N E L   M A N A G E R${NC}"
+        echo -e "  ${GREY}───────────────────────────────────────${NC}"
+        echo -e ""
+
+        # 选项区
+        echo -e "  ${WHITE}01.${NC}  部署 VLESS 隧道"
+        echo -e "  ${WHITE}02.${NC}  部署 Trojan 隧道"
+        echo -e ""
+        echo -e "  ${WHITE}03.${NC}  查看节点详情"
+        echo -e "  ${WHITE}04.${NC}  删除配置节点"
+        echo -e ""
+        echo -e "  ${WHITE}05.${NC}  重启服务"
+        echo -e "  ${WHITE}06.${NC}  停止服务"
+        echo -e "  ${WHITE}07.${NC}  卸载服务"  # <--- 补上了这个漏掉的选项
+        echo -e ""
+        echo -e "  ${GREY}───────────────────────────────────────${NC}"
+        echo -e "  ${WHITE}00.${NC}  退出系统"
+        echo -e "\n"
+
+        # 输入区优化：增加缩进，并兼容 01 和 1 的输入
+        read -e -p "  请输入选项 > " c
+        
+        case $c in
+            1|01) _add_argo_vless_ws ;;
+            2|02) _add_argo_trojan_ws ;;
+            3|03) _view_argo_nodes ;;
+            4|04) _delete_argo_node ;;
+            5|05) _restart_argo_tunnel_menu ;;
+            6|06) _stop_argo_menu ;;
+            7|07) _uninstall_argo ;;
+            0|00) return ;;
+            *) echo -e "\n  ${GREY}无效输入，请重试...${NC}"; sleep 1 ;;
+        esac
+        
+        # 这里的暂停逻辑可以根据需要调整，如果执行完不想暂停直接回菜单，可以删掉下面这行
+        read -n 1 -s -r -p "  按任意键继续..."
+    done
+}
 # --- 服务与配置管理 ---
 _create_systemd_service() {
     cat > "$SERVICE_FILE" <<EOF
@@ -951,23 +977,57 @@ _update_script() {
 }
 _update_singbox_core() { _install_sing_box; _manage_service "restart"; }
 _show_add_node_menu() {
+    # 局部颜色定义，防止污染
+    local CYAN='\033[0;36m'
+    local WHITE='\033[1;37m'
+    local GREY='\033[0;37m'
+    local NC='\033[0m'
+
     clear
-    echo -e "${CYAN}╔══════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║                  添加节点菜单                    ║${NC}"
-    echo -e "${CYAN}╚══════════════════════════════════════════════════╝${NC}"
-    echo -e " ${GREEN}[1]${NC} VLESS-Reality      ${GREEN}[2]${NC} VLESS-WS-TLS"
-    echo -e " ${GREEN}[3]${NC} Trojan-WS-TLS      ${GREEN}[4]${NC} AnyTLS"
-    echo -e " ${GREEN}[5]${NC} Hysteria2          ${GREEN}[6]${NC} TUICv5"
-    echo -e " ${GREEN}[7]${NC} Shadowsocks        ${GREEN}[8]${NC} VLESS-TCP"
-    echo -e " ${GREEN}[9]${NC} SOCKS5"
-    echo -e " --------------------------------------------------"
-    echo -e " ${YELLOW}[0]${NC} 返回主菜单"
-    read -p "选择: " c
+    # 顶部留白
+    echo -e "\n\n\n"
+
+    # 标题区：极简风格
+    echo -e "  ${CYAN}A D D   N O D E   M E N U${NC}"
+    echo -e "  ${GREY}───────────────────────────────────────${NC}"
+    echo -e ""
+
+    # 选项区：双列布局，手动对齐保证美观
+    # 第一组：主流协议
+    echo -e "  ${WHITE}01.${NC}  VLESS-Reality       ${WHITE}02.${NC}  VLESS-WS-TLS"
+    echo -e "  ${WHITE}03.${NC}  Trojan-WS-TLS       ${WHITE}04.${NC}  AnyTLS"
+    echo -e ""
+    
+    # 第二组：高性能/UDP
+    echo -e "  ${WHITE}05.${NC}  Hysteria2           ${WHITE}06.${NC}  TUICv5"
+    
+    # 第三组：传统/基础
+    echo -e "  ${WHITE}07.${NC}  Shadowsocks         ${WHITE}08.${NC}  VLESS-TCP"
+    echo -e "  ${WHITE}09.${NC}  SOCKS5"
+
+    echo -e ""
+    echo -e "  ${GREY}───────────────────────────────────────${NC}"
+    echo -e "  ${WHITE}00.${NC}  返回主菜单"
+    echo -e "\n"
+
+    # 输入区
+    read -e -p "  请选择协议 > " c
+    
     case $c in
-        1) _add_vless_reality ;; 2) _add_vless_ws_tls ;; 3) _add_trojan_ws_tls ;; 4) _add_anytls ;;
-        5) _add_hysteria2 ;; 6) _add_tuic ;; 7) _add_shadowsocks_menu ;; 8) _add_vless_tcp ;; 9) _add_socks ;;
-        0) return ;;
+        1|01) _add_vless_reality ;; 
+        2|02) _add_vless_ws_tls ;; 
+        3|03) _add_trojan_ws_tls ;; 
+        4|04) _add_anytls ;;
+        5|05) _add_hysteria2 ;; 
+        6|06) _add_tuic ;; 
+        7|07) _add_shadowsocks_menu ;; 
+        8|08) _add_vless_tcp ;; 
+        9|09) _add_socks ;;
+        0|00) return ;;
+        *) echo -e "\n  ${GREY}无效选项，取消操作...${NC}"; sleep 1; return ;; 
     esac
+
+    # 只有在有效操作后才重启服务
     _manage_service "restart"
 }
 
@@ -1102,8 +1162,23 @@ _scheduled_lifecycle_menu() {
     fi
 }
 _main_menu() {
+    # 局部颜色定义，防止污染全局变量
+    local CYAN='\033[0;36m'
+    local WHITE='\033[1;37m'
+    local GREY='\033[0;37m'
+    local GREEN='\033[0;32m'
+    local RED='\033[0;31m'
+    local YELLOW='\033[0;33m'
+    local NC='\033[0m'
+
     while true; do
         clear
+        # 顶部留白，增加呼吸感
+        echo -e "\n\n"
+
+        # ----------------------------------------------------------------
+        # 1. 抬头区域 (ASCII Art)
+        # ----------------------------------------------------------------
         echo -e "${CYAN}"
         echo '   _____ _                 __              '
         echo '  / ___/(_)___  ____      / /_  ____  _  __'
@@ -1112,71 +1187,99 @@ _main_menu() {
         echo '/____/_/_/ /_/\__, /   /_.___/\____/_/|_|  '
         echo '             /____/     [ M A K E R  Z ]   '
         echo -e "${NC}"
-        echo -e "${CYAN}"
-        echo "  ╔═══════════════════════════════════════╗"
-        echo "  ║           Singbox  管理脚本           ║"
-        echo "  ╚═══════════════════════════════════════╝"
-        echo -e "${NC}"
-        echo ""
         
-        # 获取系统信息
-        local os_info="未知"
+        # ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
+        # 🟢 您的选择：方案 2 (Network Dashboard)
+        # ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
+        echo -e "  ${CYAN}N E T W O R K   D A S H B O A R D${NC}"
+        
+        # ----------------------------------------------------------------
+        # 2. 系统信息仪表盘 (动态获取逻辑)
+        # ----------------------------------------------------------------
+        local os_info="Unknown"
         if [ -f /etc/os-release ]; then
             os_info=$(grep -E "^PRETTY_NAME=" /etc/os-release 2>/dev/null | cut -d'"' -f2 | head -1)
             [ -z "$os_info" ] && os_info=$(grep -E "^NAME=" /etc/os-release 2>/dev/null | cut -d'"' -f2 | head -1)
         fi
         [ -z "$os_info" ] && os_info=$(uname -s)
-        
-        # 获取服务状态
-        local service_status="○ 未知"
+
+        # 状态判定逻辑
+        local service_status="${RED}● Stopped${NC}"
         if [ "$INIT_SYSTEM" == "systemd" ]; then
-            if systemctl is-active --quiet sing-box 2>/dev/null; then service_status="${GREEN}● 运行中${NC}"; else service_status="${RED}○ 已停止${NC}"; fi
+            systemctl is-active --quiet sing-box 2>/dev/null && service_status="${GREEN}● Running${NC}"
         elif [ "$INIT_SYSTEM" == "openrc" ]; then
-            if rc-service sing-box status 2>/dev/null | grep -q "started"; then service_status="${GREEN}● 运行中${NC}"; else service_status="${RED}○ 已停止${NC}"; fi
+            rc-service sing-box status 2>/dev/null | grep -q "started" && service_status="${GREEN}● Running${NC}"
         fi
-        
-        # 获取 Argo 状态
-        local argo_status="${RED}○ 未安装${NC}"
+
+        local argo_status="${GREY}○ Not Installed${NC}"
         if [ -f "$CLOUDFLARED_BIN" ]; then
-            if pgrep -f "cloudflared" >/dev/null 2>&1; then argo_status="${GREEN}● 运行中${NC}"; else argo_status="${YELLOW}○ 已安装 (未运行)${NC}"; fi
+            if pgrep -f "cloudflared" >/dev/null 2>&1; then 
+                argo_status="${GREEN}● Running${NC}"
+            else 
+                argo_status="${YELLOW}● Stopped${NC}"
+            fi
         fi
+
+        # 仪表盘显示区 (分割线与状态)
+        echo -e "  ${GREY}───────────────────────────────────────────────────${NC}"
+        echo -e "   ${CYAN}SYSTEM:${NC} ${WHITE}${os_info}${NC}"
+        echo -e "   ${CYAN}CORE  :${NC} ${service_status}      ${CYAN}ARGO  :${NC} ${argo_status}"
+        echo -e "  ${GREY}───────────────────────────────────────────────────${NC}"
+        echo -e ""
+
+        # ----------------------------------------------------------------
+        # 3. 菜单选项区 (双列布局，简洁对齐)
+        # ----------------------------------------------------------------
         
-        echo -e "  系统: ${CYAN}${os_info}${NC}  |  模式: ${CYAN}${INIT_SYSTEM}${NC}"
-        echo -e "  Sing-box状态: ${service_status}  |  Argo状态: ${argo_status}"
-        echo ""
+        # --- 节点管理 ---
+        echo -e "  ${CYAN}NODE MANAGER${NC}"
+        echo -e "  ${WHITE}01.${NC} 添加节点            ${WHITE}02.${NC} Argo 隧道"
+        echo -e "  ${WHITE}03.${NC} 查看链接            ${WHITE}04.${NC} 删除节点"
+        echo -e "  ${WHITE}05.${NC} 修改端口"
+        echo -e ""
+
+        # --- 服务控制 ---
+        echo -e "  ${CYAN}SERVICE CONTROL${NC}"
+        echo -e "  ${WHITE}06.${NC} 重启服务            ${WHITE}07.${NC} 停止服务"
+        echo -e "  ${WHITE}08.${NC} 运行状态            ${WHITE}09.${NC} 实时日志"
+        echo -e "  ${WHITE}10.${NC} 定时任务 (宵禁)"
+        echo -e ""
+
+        # --- 维护与更新 ---
+        echo -e "  ${CYAN}MAINTENANCE${NC}"
+        echo -e "  ${WHITE}11.${NC} 检查配置            ${WHITE}12.${NC} 更新脚本"
+        echo -e "  ${WHITE}13.${NC} 更新核心            ${RED}14.${NC} 卸载脚本"
         
-        echo -e "  ${CYAN} 节点管理 ${NC}"
-        echo -e "    ${GREEN}[1]${NC} 添加节点          ${GREEN}[2]${NC} Argo 隧道节点"
-        echo -e "    ${GREEN}[3]${NC} 查看节点链接      ${GREEN}[4]${NC} 删除节点"
-        echo -e "    ${GREEN}[5]${NC} 修改节点端口"
-        echo ""
-        
-        echo -e "  ${CYAN} 服务控制 ${NC}"
-        echo -e "    ${GREEN}[6]${NC} 重启服务          ${GREEN}[7]${NC} 停止服务"
-        echo -e "    ${GREEN}[8]${NC} 查看运行状态      ${GREEN}[9]${NC} 查看实时日志"
-        echo -e "    ${GREEN}[10]${NC} 定时启停 (宵禁)"
-        echo ""
-        
-        echo -e "  ${CYAN} 配置与更新 ${NC}"
-        echo -e "    ${GREEN}[11]${NC} 检查配置文件    ${GREEN}[12]${NC} 更新脚本"
-        echo -e "    ${GREEN}[13]${NC} 更新核心        ${RED}[14]${NC} 卸载脚本"
-        echo ""
-        
-        echo -e "  ─────────────────────────────────────────────────"
-        echo -e "    ${YELLOW}[0]${NC} 退出脚本"
-        echo ""
-        
-        read -p "  请输入选项 [0-14]: " choice
+        echo -e "\n  ${GREY}───────────────────────────────────────────────────${NC}"
+        echo -e "  ${WHITE}00.${NC} 退出脚本"
+        echo -e ""
+
+        # ----------------------------------------------------------------
+        # 4. 输入处理 (兼容 01 和 1)
+        # ----------------------------------------------------------------
+        read -e -p "  请输入选项 > " choice
         case $choice in
-            1) _show_add_node_menu ;; 2) _argo_menu ;; 3) _view_nodes ;; 4) _delete_node ;; 5) _modify_port ;;
-            6) _manage_service "restart" ;; 7) _manage_service "stop" ;; 8) _manage_service "status" ;; 9) _view_log ;; 
-            10) _scheduled_lifecycle_menu ;; # 修改此处
-            11) _check_config ;; 12) _update_script ;; 13) _update_singbox_core ;; 14) _uninstall ;;
-            0) exit 0 ;;
-            *) _error "无效输入，请重试。" ;;
+            1|01) _show_add_node_menu ;; 
+            2|02) _argo_menu ;; 
+            3|03) _view_nodes ;; 
+            4|04) _delete_node ;; 
+            5|05) _modify_port ;;
+            6|06) _manage_service "restart" ;; 
+            7|07) _manage_service "stop" ;; 
+            8|08) _manage_service "status" ;; 
+            9|09) _view_log ;; 
+            10)   _scheduled_lifecycle_menu ;; 
+            11)   _check_config ;; 
+            12)   _update_script ;; 
+            13)   _update_singbox_core ;; 
+            14)   _uninstall ;;
+            0|00) exit 0 ;;
+            *)    echo -e "\n  ${GREY}无效输入，请重试...${NC}"; sleep 1 ;;
         esac
-        echo
-        read -n 1 -s -r -p "按任意键返回主菜单..."
+        
+        # 这里的 echo 是为了美观，防止 read -n 1 紧贴着上一行
+        echo -e "" 
+        read -n 1 -s -r -p "  按任意键返回主菜单..."
     done
 }
 
