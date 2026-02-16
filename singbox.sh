@@ -988,7 +988,7 @@ _show_add_node_menu() {
     echo -e "\n\n\n"
 
     # 标题区：极简风格
-    echo -e "               ${CYAN}A D D   N O D E   M E N U${NC}"
+    echo -e "              ${CYAN}A D D   N O D E   M E N U${NC}"
     echo -e "  ${GREY}─────────────────────────────────────────────────${NC}"
     echo -e ""
 
