@@ -46,8 +46,6 @@ CLASH_YAML_FILE="${SINGBOX_DIR}/clash.yaml"
 METADATA_FILE="${SINGBOX_DIR}/metadata.json"
 YQ_BINARY="/usr/local/bin/yq"
 LOG_FILE="/var/log/sing-box.log"
-SERVICE_FILE="/etc/systemd/system/sing-box.service"
-[ "$INIT_SYSTEM" == "openrc" ] && SERVICE_FILE="/etc/init.d/sing-box"
 
 # Argo Tunnel 相关常量
 CLOUDFLARED_BIN="/usr/local/bin/cloudflared"
@@ -203,19 +201,22 @@ _install_cloudflared() {
 # --- Argo Tunnel 功能 ---
 _start_argo_tunnel() {
     local target_port="$1"; local protocol="$2"; local token="$3" 
-    local pid_file="/tmp/singbox_argo_${target_port}.pid"; local log_file="/tmp/singbox_argo_${target_port}.log"
+    local pid_file="/tmp/singbox_argo_${target_port}.pid"
+    local log_file="/tmp/singbox_argo_${target_port}.log"
+    
     _info "正在启动 Argo 隧道 (端口: $target_port)..." >&2
-    if [ -f "$pid_file" ]; then
-        local old_pid=$(cat "$pid_file" 2>/dev/null)
-        if [ -n "$old_pid" ] && kill -0 "$old_pid" 2>/dev/null; then _warning "隧道已运行 (PID: $old_pid)" >&2; return 0; fi
-    fi
+    
+    # 每次启动前清理旧日志
     rm -f "${log_file}"
+
     if [ -n "$token" ]; then
-        nohup ${CLOUDFLARED_BIN} tunnel run --token "$token" > "${log_file}" 2>&1 &
+        # 固定隧道：直接丢弃所有日志，防止占用内存
+        nohup ${CLOUDFLARED_BIN} tunnel run --token "$token" > /dev/null 2>&1 &
         local cf_pid=$!; echo "$cf_pid" > "${pid_file}"; sleep 5
         if ! kill -0 "$cf_pid" 2>/dev/null; then _error "启动失败" >&2; return 1; fi
         _success "Argo 固定隧道启动成功" >&2; return 0
     else
+        # 临时隧道：抓取域名后立即清空日志
         nohup ${CLOUDFLARED_BIN} tunnel --url "http://localhost:${target_port}" --logfile "${log_file}" > /dev/null 2>&1 &
         local cf_pid=$!; echo "$cf_pid" > "${pid_file}"
         local tunnel_domain=""; local wait_count=0
@@ -224,7 +225,10 @@ _start_argo_tunnel() {
             if ! kill -0 "$cf_pid" 2>/dev/null; then return 1; fi
             if [ -f "${log_file}" ]; then
                 tunnel_domain=$(grep -o 'https://[a-zA-Z0-9-]*\.trycloudflare\.com' "${log_file}" 2>/dev/null | tail -1 | sed 's|https://||')
-                if [ -n "$tunnel_domain" ]; then break; fi
+                if [ -n "$tunnel_domain" ]; then 
+                    : > "${log_file}" # 关键修复：清空日志文件，防止其无限增长
+                    break 
+                fi
             fi
         done
         if [ -n "$tunnel_domain" ]; then echo "$tunnel_domain"; return 0; else return 1; fi
@@ -695,7 +699,7 @@ _add_vless_ws_tls() {
     read -p "WS路径 (回车随机): " w; ws_path=${w:-"/"$(${SINGBOX_BIN} generate rand --hex 8)}; [[ ! "$ws_path" == /* ]] && ws_path="/${ws_path}"
     local cert_path="${SINGBOX_DIR}/${tag}.pem" key_path="${SINGBOX_DIR}/${tag}.key" skip_verify=false
     read -p "证书类型 (1.自签 2.上传): " cert_choice; cert_choice=${cert_choice:-1}
-    if [ "$cert_choice" == "1" ]; 键，然后 _generate_self_signed_cert "$camouflage_domain" "$cert_path" "$key_path" || return 1; skip_verify=true
+    if [ "$cert_choice" == "1" ]; then _generate_self_signed_cert "$camouflage_domain" "$cert_path" "$key_path" || return 1; skip_verify=true
     else read -p "证书路径: " cert_path; read -p "私钥路径: " key_path; read -p "跳过验证? (y/N): " u; [[ "$u" == "y" ]] && skip_verify=true; fi
     local uuid=$(${SINGBOX_BIN} generate uuid)
     local inbound=$(jq -n --arg t "$tag" --arg p "$port" --arg u "$uuid" --arg cp "$cert_path" --arg kp "$key_path" --arg w "$ws_path" '{"type":"vless","tag":$t,"listen":"::","listen_port":($p|tonumber),"users":[{"uuid":$u,"flow":""}],"tls":{"enabled":true,"certificate_path":$cp,"key_path":$kp},"transport":{"type":"ws","path":$w}}')
@@ -707,7 +711,7 @@ _add_vless_ws_tls() {
 
 _add_trojan_ws_tls() {
     local camouflage_domain="" port="" is_cdn_mode=false client_server_addr="${server_ip}" name=""
-    read -p "连接模式 (1.直连 2.优选): " m; if [ "$m" == "2" ]; 键，然后 is_cdn_mode=true; read -p "优选域名: " c; client_server_addr=${c:-"www.visa.com.sg"}; else read -p "连接地址: " c; client_server_addr=${c:-$server_ip}; fi
+    read -p "连接模式 (1.直连 2.优选): " m; if [ "$m" == "2" ]; then is_cdn_mode=true; read -p "优选域名: " c; client_server_addr=${c:-"www.visa.com.sg"}; else read -p "连接地址: " c; client_server_addr=${c:-$server_ip}; fi
     read -p "伪装域名: " camouflage_domain; read -p "监听端口: " port; local dn="Trojan-WS"; read -p "名称 (默认 $dn): " cn; name=${cn:-$dn}
     local safe_name=$(_sanitize_tag "$name"); local tag="${safe_name}_${port}"
     if jq -e ".inbounds[] | select(.tag == \"$tag\")" "$CONFIG_FILE" >/dev/null 2>&1; then tag="${tag}_$(openssl rand -hex 2)"; fi
@@ -715,7 +719,7 @@ _add_trojan_ws_tls() {
     read -p "WS路径: " w; ws_path=${w:-"/"$(${SINGBOX_BIN} generate rand --hex 8)}
     local cert_path="${SINGBOX_DIR}/${tag}.pem" key_path="${SINGBOX_DIR}/${tag}.key" skip_verify=false
     read -p "证书类型 (1.自签 2.上传): " cert_choice; cert_choice=${cert_choice:-1}
-    if [ "$cert_choice" == "1" ]; 键，然后 _generate_self_signed_cert "$camouflage_domain" "$cert_path" "$key_path" || return 1; skip_verify=true
+    if [ "$cert_choice" == "1" ]; then _generate_self_signed_cert "$camouflage_domain" "$cert_path" "$key_path" || return 1; skip_verify=true
     else read -p "证书路径: " cert_path; read -p "私钥路径: " key_path; read -p "跳过验证? (y/N): " u; [[ "$u" == "y" ]] && skip_verify=true; fi
     read -p "密码: " p; password=${p:-$(${SINGBOX_BIN} generate rand --hex 16)}
     local inbound=$(jq -n --arg t "$tag" --arg p "$port" --arg pw "$password" --arg cp "$cert_path" --arg kp "$key_path" --arg w "$ws_path" '{"type":"trojan","tag":$t,"listen":"::","listen_port":($p|tonumber),"users":[{"password":$pw}],"tls":{"enabled":true,"certificate_path":$cp,"key_path":$kp},"transport":{"type":"ws","path":$w}}')
@@ -731,7 +735,7 @@ _add_anytls() {
     local safe_name=$(_sanitize_tag "$name"); local tag="${safe_name}_${port}"; if jq -e ".inbounds[] | select(.tag == \"$tag\")" "$CONFIG_FILE" >/dev/null 2>&1; then tag="${tag}_$(openssl rand -hex 2)"; fi
     read -p "证书类型 (1.自签 2.上传): " cert_choice; cert_choice=${cert_choice:-1}
     local cert_path="" key_path="" skip_verify=true
-    if [ "$cert_choice" == "1" ]; 键，然后 cert_path="${SINGBOX_DIR}/${tag}.pem"; key_path="${SINGBOX_DIR}/${tag}.key"; _generate_self_signed_cert "$server_name" "$cert_path" "$key_path" || return 1
+    if [ "$cert_choice" == "1" ]; then cert_path="${SINGBOX_DIR}/${tag}.pem"; key_path="${SINGBOX_DIR}/${tag}.key"; _generate_self_signed_cert "$server_name" "$cert_path" "$key_path" || return 1
     else read -p "证书路径: " cert_path; read -p "私钥路径: " key_path; read -p "跳过验证? (y/N): " u; [[ "$u" == "y" ]] && skip_verify=true; fi
     read -p "密码/UUID: " p; password=${p:-$(${SINGBOX_BIN} generate uuid)}; local link_ip="$node_ip"; [[ "$node_ip" == *":"* ]] && link_ip="[$node_ip]"
     local inbound=$(jq -n --arg t "$tag" --arg p "$port" --arg pw "$password" --arg sn "$server_name" --arg cp "$cert_path" --arg kp "$key_path" '{"type": "anytls", "tag": $t, "listen": "::", "listen_port": ($p|tonumber), "users": [{"name": "default", "password": $pw}], "padding_scheme": ["stop=2","0=100-200","1=100-200"], "tls": {"enabled": true, "server_name": $sn, "certificate_path": $cp, "key_path": $kp}}')
@@ -1275,6 +1279,20 @@ _main_menu() {
 
 main() {
     _check_root; _detect_init_system
+
+    # [新增] 只有检测完系统后，才能确定服务文件路径
+    if [ "$INIT_SYSTEM" == "openrc" ]; then
+        SERVICE_FILE="/etc/init.d/sing-box"
+    else
+        SERVICE_FILE="/etc/systemd/system/sing-box.service"
+    fi
+    
+    # --- [额外补充] 日志自动清理逻辑 ---
+    # 如果日志文件存在且大于 10MB，则清空它
+    [ -f "${LOG_FILE}" ] && [ $(stat -c%s "${LOG_FILE}") -gt 10485760 ] && : > "${LOG_FILE}"
+    # ------------------------------------
+
+    
     _set_beijing_timezone
     
     mkdir -p "${SINGBOX_DIR}" 2>/dev/null
