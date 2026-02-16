@@ -246,7 +246,7 @@ _stop_all_argo_tunnels() {
 }
 
 _add_argo_vless_ws() {
-    _info "--- 创建 VLESS-WS + Argo 隧道节点 ---"
+    _info " 创建 VLESS-WS + Argo 隧道节点 "
     _install_cloudflared || return 1
     
     # 端口配置
@@ -272,7 +272,7 @@ _add_argo_vless_ws() {
     local token=""; local domain=""; local type="temp"
     if [ "$mode" == "2" ]; then
         type="fixed"
-        echo -e "${CYAN}---------------------------------------------------------------${NC}"
+        echo -e "${CYAN}────────────────────────────────────────────────────────${NC}"
         echo -e "${CYAN} 固定隧道 Token 获取指南${NC} "
         echo "  1. 访问 https://one.dash.cloudflare.com/"
         echo "  2. 进入 Networks -> Tunnels -> Create a tunnel"
@@ -281,7 +281,7 @@ _add_argo_vless_ws() {
         echo "  5. 在 'Install and run a connector' 页面，选择 Debian -> 64-bit"
         echo "  6. 复制下方出现的安装命令 (通常以 sudo cloudflared service install ... 开头)"
         echo "  7. 将完整的命令粘贴到下方即可，脚本会自动提取 Token"
-        echo -e "${CYAN}---------------------------------------------------------------${NC}"
+        echo -e "${CYAN}────────────────────────────────────────────────────────${NC}"
         
         read -p "请粘贴 Token 或 完整安装命令: " input_token
         token=$(echo "$input_token" | grep -oE 'ey[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+' | head -1)
@@ -330,7 +330,7 @@ _add_argo_vless_ws() {
 }
 
 _add_argo_trojan_ws() {
-    _info "--- 创建 Trojan-WS + Argo 隧道节点 ---"
+    _info " 创建 Trojan-WS + Argo 隧道节点 "
     _install_cloudflared || return 1
     
     read -p "请输入 Argo 内部监听端口 (回车随机生成): " input_port
@@ -357,10 +357,10 @@ _add_argo_trojan_ws() {
     if [ "$mode" == "2" ]; then
         type="fixed"
         # ... (同上 VLESS 的详细提示) ...
-        echo -e "${CYAN}---------------------------------------------------------------${NC}"
+        echo -e "${CYAN}────────────────────────────────────────────────────────${NC}"
         echo -e "${CYAN} 固定隧道 Token 获取指南 ${NC}"
         echo "  请粘贴 Cloudflare Tunnel Token (支持直接粘贴CF网页端安装命令):"
-        echo -e "${CYAN}---------------------------------------------------------------${NC}"
+        echo -e "${CYAN}────────────────────────────────────────────────────────${NC}"
         read -p "Token: " input_token
         token=$(echo "$input_token" | grep -oE 'ey[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+' | head -1)
         [ -z "$token" ] && token=$(echo "$input_token" | grep -oE 'ey[A-Za-z0-9_-]{20,}' | head -1)
@@ -405,13 +405,13 @@ _add_argo_trojan_ws() {
 }
 
 _view_argo_nodes() {
-    _info "--- Argo 节点列表 ---"
+    _info "   Argo 节点列表    "
     if [ ! -f "$ARGO_METADATA_FILE" ] || [ "$(jq 'length' "$ARGO_METADATA_FILE")" -eq 0 ]; then
         _warning "没有 Argo 隧道节点。"
         return
     fi
     
-    echo "==================================================="
+    echo "────────────────────────────────────────────────────────"
     jq -r 'to_entries[] | "\(.value.name)|\(.value.type)|\(.value.protocol)|\(.value.local_port)|\(.value.domain)|\(.value.uuid // "")|\(.value.path // "")|\(.value.password // "")"' "$ARGO_METADATA_FILE" | \
     while IFS='|' read -r name type protocol port domain uuid path password; do
         echo -e "节点: ${GREEN}${name}${NC}"
@@ -443,7 +443,7 @@ _view_argo_nodes() {
              fi
              [ -n "$link" ] && echo -e "  ${YELLOW}链接:${NC} $link"
         fi
-        echo "-------------------------------------------"
+        echo "────────────────────────────────────────────────────────"
     done
 }
 
@@ -463,10 +463,10 @@ _delete_argo_node() {
     local idx=$((choice - 1))
     local n=${names[$idx]}; local p=${ports[$idx]}; local k=${keys[$idx]}
     
-    echo -e "${RED}═════════════════════════════════════════════${NC}"
+    echo -e "${RED}─────────────────────────────────────────────${NC}"
     echo -e "  即将删除 Argo 节点: ${CYAN}${n}${NC}"
     echo -e "  本地监听端口: ${GREEN}${p}${NC}"
-    echo -e "${RED}═════════════════════════════════════════════${NC}"
+    echo -e "${RED}─────────────────────────────────────────────${NC}"
     read -p "$(echo -e ${YELLOW}"确认删除? (y/N): "${NC})" confirm
     if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then return; fi
     
@@ -533,7 +533,7 @@ _argo_menu() {
         echo -e "\n\n\n"
 
         # 标题区
-        echo -e "  ${CYAN}  A R G O   T U N N E L   M A N A G E R${NC}"
+        echo -e "    ${CYAN}A R G O   T U N N E L   M A N A G E R${NC}"
         echo -e "  ${GREY}───────────────────────────────────────${NC}"
         echo -e ""
 
@@ -886,7 +886,7 @@ _view_nodes() {
 
 _delete_node() {
     if ! jq -e '.inbounds | length > 0' "$CONFIG_FILE" >/dev/null 2>&1; then _warning "无节点"; return; fi
-    _info "--- 节点删除 ---"
+    _info "   节点删除  "
     local tags=(); local ports=(); local types=(); local names=(); local i=1
     while IFS= read -r node; do
         local tag=$(echo "$node" | jq -r '.tag'); [[ "$tag" == *"-hop-"* ]] && continue
@@ -908,11 +908,11 @@ _delete_node() {
     fi
     if [ "$num" -gt "${#tags[@]}" ]; then return; fi
     local idx=$((num - 1)); local tag=${tags[$idx]}; local type=${types[$idx]}; local name=${names[$idx]}; local p=${ports[$idx]}
-    echo -e "${RED}═════════════════════════════════════════════${NC}"
+    echo -e "${RED}─────────────────────────────────────────────${NC}"
     echo -e "  即将删除节点: ${CYAN}${name}${NC}"
     echo -e "  协议类型: ${YELLOW}${type}${NC}"
     echo -e "  监听端口: ${GREEN}${p}${NC}"
-    echo -e "${RED}═════════════════════════════════════════════${NC}"
+    echo -e "${RED}─────────────────────────────────────────────${NC}"
     read -p "$(echo -e ${YELLOW}"是否确认删除此节点? (y/N): "${NC})" confirm
     if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then return; fi
     _atomic_modify_json "$CONFIG_FILE" "del(.inbounds[] | select(.tag == \"$tag\"))"
@@ -925,7 +925,7 @@ _delete_node() {
 
 _modify_port() {
     if ! jq -e '.inbounds | length > 0' "$CONFIG_FILE" >/dev/null 2>&1; then _warning "无节点"; return; fi
-    _info "--- 修改端口 ---"
+    _info "   修改端口  "
     local tags=(); local ports=(); local types=(); local names=(); local i=1
     while IFS= read -r node; do
         local tag=$(echo "$node" | jq -r '.tag'); 
@@ -988,7 +988,7 @@ _show_add_node_menu() {
     echo -e "\n\n\n"
 
     # 标题区：极简风格
-    echo -e "  ${CYAN}  A D D   N O D E   M E N U${NC}"
+    echo -e "     ${CYAN}A D D   N O D E   M E N U${NC}"
     echo -e "  ${GREY}───────────────────────────────────────${NC}"
     echo -e ""
 
@@ -1189,7 +1189,7 @@ _main_menu() {
         echo -e "${NC}"
         
       
-        echo -e "  ${CYAN}  N E T W O R K   D A S H B O A R D${NC}"
+        echo -e "     ${CYAN}N E T W O R K   D A S H B O A R D${NC}"
         
         # ----------------------------------------------------------------
         # 2. 系统信息仪表盘 (动态获取逻辑)
