@@ -988,8 +988,8 @@ _show_add_node_menu() {
     echo -e "\n\n\n"
 
     # 标题区：极简风格
-    echo -e "               ${CYAN}A D D   N O D E   M E N U${NC}"
-    echo -e "  ${GREY}──────────────────────────────────────────────────${NC}"
+    echo -e "                ${CYAN}A D D   N O D E   M E N U${NC}"
+    echo -e "  ${GREY}─────────────────────────────────────────────────${NC}"
     echo -e ""
 
     # 选项区：双列布局，手动对齐保证美观
@@ -1006,7 +1006,7 @@ _show_add_node_menu() {
     echo -e "     ${WHITE}09.${NC}  SOCKS5"
 
     echo -e ""
-    echo -e "  ${GREY}───────────────────────────────────────────────────${NC}"
+    echo -e "  ${GREY}──────────────────────────────────────────────────${NC}"
     echo -e "     ${WHITE}00.${NC}  返回主菜单"
     echo -e "\n"
 
