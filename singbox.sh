@@ -64,7 +64,7 @@ SELF_SCRIPT_PATH=$(readlink -f "$0")
 PID_FILE="/var/run/singbox_manager.pid"
 
 # 脚本版本 (仅内部记录)
-SCRIPT_VERSION="11-Lite-Final"
+SCRIPT_VERSION="12-Scheduled-Lifecycle"
 
 # 捕获退出信号
 trap 'rm -f ${SINGBOX_DIR}/*.tmp /tmp/singbox_links.tmp' EXIT
@@ -79,7 +79,8 @@ _sanitize_tag() {
 
 # 依赖安装
 _install_dependencies() {
-    local pkgs="curl jq openssl wget procps iptables socat tar iproute2"
+    local pkgs="curl jq openssl wget procps iptables socat tar iproute2 cron" 
+    # 注意：增加了 cron 依赖
     local needs_install=false
     for pkg in $pkgs; do
         if ! command -v $pkg &>/dev/null && ! dpkg -l $pkg &>/dev/null 2>&1 && ! apk info -e $pkg &>/dev/null 2>&1; then
@@ -861,9 +862,7 @@ _modify_port() {
 _check_config() { if ${SINGBOX_BIN} check -c ${CONFIG_FILE}; then _success "配置 (${CONFIG_FILE}) 正确"; else _error "配置错误"; fi; }
 _update_script() {
     _info "正在更新主脚本..."
-    # 使用双引号包裹路径，防止仓库名开头的 "-" 引起识别错误
     local temp="${SELF_SCRIPT_PATH}.tmp"
-    
     if wget -qO "$temp" "$SCRIPT_UPDATE_URL"; then 
         chmod +x "$temp"
         mv "$temp" "$SELF_SCRIPT_PATH"
@@ -871,17 +870,14 @@ _update_script() {
     else 
         _error "下载失败"
     fi
-
     _info "正在更新 utils.sh..."
     local u_path="${SINGBOX_DIR}/utils.sh"
-    # 从您的新基础网址下载 utils.sh
     if wget -qO "$u_path" "${GITHUB_RAW_BASE}/utils.sh"; then
         chmod +x "$u_path"
         _success "utils.sh 更新成功"
     else
         _error "utils.sh 下载失败"
     fi
-    
     exit 0
 }
 _update_singbox_core() { _install_sing_box; _manage_service "restart"; }
@@ -926,21 +922,71 @@ EOF
     _success "快速部署完成！"
 }
 
-_scheduled_restart_menu() {
-    [ "$INIT_SYSTEM" == "unknown" ] && return
-    echo " [1] 设置定时重启  [2] 取消"
+# --- 定时启停功能 ---
+_do_scheduled_start() {
+    _info "执行定时启动任务..." >> "$LOG_FILE"
+    _manage_service "start"
+    # 恢复 Argo 守护
+    if [ -f "$ARGO_METADATA_FILE" ] && [ "$(jq 'length' "$ARGO_METADATA_FILE")" -gt 0 ]; then
+        _enable_argo_watchdog
+        _argo_keepalive # 立即尝试拉起一次
+    fi
+}
+
+_do_scheduled_stop() {
+     _info "执行定时停止任务..." >> "$LOG_FILE"
+     # 先关守护，防止自愈
+     _disable_argo_watchdog
+     _stop_all_argo_tunnels
+     _manage_service "stop"
+}
+
+_scheduled_lifecycle_menu() {
+    echo -e " ${CYAN}--- 定时启停管理 (宵禁模式) ---${NC}"
+    echo -e " 功能说明: 每天指定时间自动启动和停止所有服务(包括 Argo)"
+    
+    local start_cron="bash ${SELF_SCRIPT_PATH} scheduled_start"
+    local stop_cron="bash ${SELF_SCRIPT_PATH} scheduled_stop"
+    
+    local existing_start=$(crontab -l 2>/dev/null | grep "$start_cron")
+    local existing_stop=$(crontab -l 2>/dev/null | grep "$stop_cron")
+    
+    if [ -n "$existing_start" ] && [ -n "$existing_stop" ]; then
+        local s_h=$(echo "$existing_start" | awk '{print $2}')
+        local e_h=$(echo "$existing_stop" | awk '{print $2}')
+        echo -e " 当前状态: ${GREEN}已启用${NC} (启动: ${s_h}:00 | 停止: ${e_h}:00)"
+    else
+        echo -e " 当前状态: ${RED}未启用${NC}"
+    fi
+    echo ""
+    echo -e " ${GREEN}[1]${NC} 设置/修改 定时计划"
+    echo -e " ${RED}[2]${NC} 删除 所有定时计划"
+    echo -e " ${YELLOW}[0]${NC} 返回"
+    
     read -p "选择: " c
     if [ "$c" == "1" ]; then
-        read -p "时间 (HH:MM): " t
-        if [ "$INIT_SYSTEM" == "systemd" ]; then
-             echo -e "[Unit]\nDescription=Restart\n[Service]\nType=oneshot\nExecStart=/usr/bin/systemctl restart sing-box" > /etc/systemd/system/sb-restart.service
-             echo -e "[Unit]\nDescription=Timer\n[Timer]\nOnCalendar=*-*-* $t:00\nPersistent=true\n[Install]\nWantedBy=timers.target" > /etc/systemd/system/sb-restart.timer
-             systemctl daemon-reload; systemctl enable --now sb-restart.timer
-        elif [ "$INIT_SYSTEM" == "openrc" ]; then _warn "OpenRC 定时重启需手动配置 crontab"; fi
-        _success "已设置"
+        read -p "请输入启动时间 (小时 0-23): " start_h
+        read -p "请输入停止时间 (小时 0-23): " stop_h
+        
+        if [[ ! "$start_h" =~ ^[0-9]+$ ]] || [[ ! "$stop_h" =~ ^[0-9]+$ ]] || \
+           [ "$start_h" -lt 0 ] || [ "$start_h" -gt 23 ] || \
+           [ "$stop_h" -lt 0 ] || [ "$stop_h" -gt 23 ]; then
+            _error "时间格式错误，请输入 0-23 的整数"
+            return
+        fi
+        
+        # 清理旧任务
+        crontab -l 2>/dev/null | grep -v "scheduled_start" | grep -v "scheduled_stop" | crontab -
+        
+        # 添加新任务
+        (crontab -l 2>/dev/null; echo "0 $start_h * * * $start_cron >> $LOG_FILE 2>&1") | crontab -
+        (crontab -l 2>/dev/null; echo "0 $stop_h * * * $stop_cron >> $LOG_FILE 2>&1") | crontab -
+        
+        _success "定时计划已设置：每天 $start_h:00 启动， $stop_h:00 停止。"
+        
     elif [ "$c" == "2" ]; then
-        if [ "$INIT_SYSTEM" == "systemd" ]; then systemctl disable --now sb-restart.timer; rm -f /etc/systemd/system/sb-restart.*; systemctl daemon-reload; fi
-        _success "已取消"
+        crontab -l 2>/dev/null | grep -v "scheduled_start" | grep -v "scheduled_stop" | crontab -
+        _success "定时计划已移除。"
     fi
 }
 
@@ -997,7 +1043,7 @@ _main_menu() {
         echo -e "  ${CYAN} 服务控制 ${NC}"
         echo -e "    ${GREEN}[6]${NC} 重启服务          ${GREEN}[7]${NC} 停止服务"
         echo -e "    ${GREEN}[8]${NC} 查看运行状态      ${GREEN}[9]${NC} 查看实时日志"
-        echo -e "    ${GREEN}[10]${NC} 定时重启设置"
+        echo -e "    ${GREEN}[10]${NC} 定时启停 (宵禁)"
         echo ""
         
         echo -e "  ${CYAN} 配置与更新 ${NC}"
@@ -1012,7 +1058,8 @@ _main_menu() {
         read -p "  请输入选项 [0-14]: " choice
         case $choice in
             1) _show_add_node_menu ;; 2) _argo_menu ;; 3) _view_nodes ;; 4) _delete_node ;; 5) _modify_port ;;
-            6) _manage_service "restart" ;; 7) _manage_service "stop" ;; 8) _manage_service "status" ;; 9) _view_log ;; 10) _scheduled_restart_menu ;;
+            6) _manage_service "restart" ;; 7) _manage_service "stop" ;; 8) _manage_service "status" ;; 9) _view_log ;; 
+            10) _scheduled_lifecycle_menu ;; # 修改此处
             11) _check_config ;; 12) _update_script ;; 13) _update_singbox_core ;; 14) _uninstall ;;
             0) exit 0 ;;
             *) _error "无效输入，请重试。" ;;
@@ -1034,5 +1081,15 @@ main() {
     if [ "$QUICK_DEPLOY_MODE" = true ]; then _quick_deploy; exit 0; fi
     _main_menu
 }
-while [[ $# -gt 0 ]]; do case "$1" in -q|--quick-deploy) QUICK_DEPLOY_MODE=true; shift ;; keepalive) _argo_keepalive; exit 0 ;; *) shift ;; esac; done
+
+# 参数监听修改，增加 scheduled_start 和 scheduled_stop
+while [[ $# -gt 0 ]]; do 
+    case "$1" in 
+        -q|--quick-deploy) QUICK_DEPLOY_MODE=true; shift ;; 
+        keepalive) _argo_keepalive; exit 0 ;; 
+        scheduled_start) _do_scheduled_start; exit 0 ;;
+        scheduled_stop) _do_scheduled_stop; exit 0 ;;
+        *) shift ;; 
+    esac
+done
 main
