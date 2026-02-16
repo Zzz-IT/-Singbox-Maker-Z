@@ -534,7 +534,7 @@ _argo_menu() {
 
         # 标题区
         echo -e "    ${CYAN}A R G O   T U N N E L   M A N A G E R${NC}"
-        echo -e "  ${GREY}───────────────────────────────────────${NC}"
+        echo -e "  ${GREY}──────────────────────────────────────────${NC}"
         echo -e ""
 
         # 选项区
@@ -548,7 +548,7 @@ _argo_menu() {
         echo -e "  ${WHITE}06.${NC}  停止服务"
         echo -e "  ${WHITE}07.${NC}  卸载服务"  # <--- 补上了这个漏掉的选项
         echo -e ""
-        echo -e "  ${GREY}───────────────────────────────────────${NC}"
+        echo -e "  ${GREY}──────────────────────────────────────────${NC}"
         echo -e "  ${WHITE}00.${NC}  退出系统"
         echo -e "\n"
 
@@ -853,7 +853,7 @@ _view_nodes() {
         local dn=$(jq -r --arg t "$tag" '.[$t].name // empty' "$METADATA_FILE"); if [ -z "$dn" ]; then dn=$(echo "$tag" | sed "s/_${port}$//" | tr '_' ' '); fi; [ -z "$dn" ] && dn="$tag"
         local link_ip="${server_ip}"; [[ "$server_ip" == *":"* ]] && link_ip="[$server_ip]"
         local pn=$(${YQ_BINARY} eval '.proxies[] | select(.name == "'"$dn"'") | .name' ${CLASH_YAML_FILE} | head -1)
-        echo "-------------------------------------"; _info " 节点: ${dn}"; local url=""
+        echo "──────────────────────────────────────"; _info " 节点: ${dn}"; local url=""
         case "$type" in
             "vless")
                  local uuid=$(echo "$node" | jq -r '.users[0].users[0].uuid // .users[0].uuid')
@@ -988,8 +988,8 @@ _show_add_node_menu() {
     echo -e "\n\n\n"
 
     # 标题区：极简风格
-    echo -e "     ${CYAN}A D D   N O D E   M E N U${NC}"
-    echo -e "  ${GREY}───────────────────────────────────────${NC}"
+    echo -e "      ${CYAN}A D D   N O D E   M E N U${NC}"
+    echo -e "  ${GREY}──────────────────────────────────────${NC}"
     echo -e ""
 
     # 选项区：双列布局，手动对齐保证美观
@@ -1071,7 +1071,7 @@ _do_scheduled_stop() {
 }
 
 _scheduled_lifecycle_menu() {
-    echo -e " ${CYAN}--- 定时启停管理 ---${NC}"
+    echo -e " ${CYAN}   定时启停管理  ${NC}"
     echo -e " 功能说明: 每天指定时间(精确到分)自动启动和停止所有服务"
     echo -e " 系统时间: ${YELLOW}$(date "+%Y-%m-%d %H:%M:%S") (CST)${NC}"
     
@@ -1167,7 +1167,7 @@ _main_menu() {
     local WHITE='\033[1;37m'
     local GREY='\033[0;37m'
     local GREEN='\033[0;32m'
-    local RED='\033[0;31m'
+    local RED='\033[1;31m'
     local YELLOW='\033[0;33m'
     local NC='\033[0m'
 
@@ -1180,16 +1180,16 @@ _main_menu() {
         # 1. 抬头区域 (ASCII Art)
         # ----------------------------------------------------------------
         echo -e "${CYAN}"
-        echo '   _____ _                 __              '
-        echo '  / ___/(_)___  ____      / /_  ____  _  __'
-        echo '  \__ \/ / __ \/ __ \    / __ \/ __ \| |/_/'
-        echo ' ___/ / / / / / /_/ /   / /_/ / /_/ />  <  '
-        echo '/____/_/_/ /_/\__, /   /_.___/\____/_/|_|  '
+        echo '   _____ _               __              '
+        echo '  / ___/(_)___  ____    / /_  ____  _  __'
+        echo '  \__ \/ / __ \/ __ \  / __ \/ __ \| |/_/'
+        echo ' ___/ / / / / / /_/ / / /_/ / /_/ />  <  '
+        echo '/____/_/_/ /_/\__, / /_.___/\____/_/|_|  '
         echo '             /____/     [ M A K E R  Z ]   '
         echo -e "${NC}"
         
       
-        echo -e "     ${CYAN}N E T W O R K   D A S H B O A R D${NC}"
+        echo -e "      ${CYAN}N E T W O R K   D A S H B O A R D${NC}"
         
         # ----------------------------------------------------------------
         # 2. 系统信息仪表盘 (动态获取逻辑)
@@ -1219,10 +1219,10 @@ _main_menu() {
         fi
 
         # 仪表盘显示区 (分割线与状态)
-        echo -e "  ${GREY}───────────────────────────────────────────────────${NC}"
+        echo -e "  ${GREY}───────────────────────────────────────────────${NC}"
         echo -e "   ${CYAN}SYSTEM:${NC} ${WHITE}${os_info}${NC}"
         echo -e "   ${CYAN}CORE  :${NC} ${service_status}      ${CYAN}ARGO  :${NC} ${argo_status}"
-        echo -e "  ${GREY}───────────────────────────────────────────────────${NC}"
+        echo -e "  ${GREY}───────────────────────────────────────────────${NC}"
         echo -e ""
 
         # ----------------------------------------------------------------
@@ -1240,7 +1240,7 @@ _main_menu() {
         echo -e "  ${CYAN}SERVICE CONTROL${NC}"
         echo -e "  ${WHITE}06.${NC} 重启服务            ${WHITE}07.${NC} 停止服务"
         echo -e "  ${WHITE}08.${NC} 运行状态            ${WHITE}09.${NC} 实时日志"
-        echo -e "  ${WHITE}10.${NC} 定时任务 (宵禁)"
+        echo -e "  ${WHITE}10.${NC} 定时任务 "
         echo -e ""
 
         # --- 维护与更新 ---
@@ -1248,7 +1248,7 @@ _main_menu() {
         echo -e "  ${WHITE}11.${NC} 检查配置            ${WHITE}12.${NC} 更新脚本"
         echo -e "  ${WHITE}13.${NC} 更新核心            ${RED}14.${NC} 卸载脚本"
         
-        echo -e "\n  ${GREY}───────────────────────────────────────────────────${NC}"
+        echo -e "\n  ${GREY}───────────────────────────────────────────────${NC}"
         echo -e "  ${WHITE}00.${NC} 退出脚本"
         echo -e ""
 
