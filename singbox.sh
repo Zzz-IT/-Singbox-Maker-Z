@@ -975,21 +975,24 @@ _scheduled_lifecycle_menu() {
     echo -e " ${CYAN}--- 定时启停管理 (宵禁模式) ---${NC}"
     echo -e " 功能说明: 每天指定时间(精确到分)自动启动和停止所有服务"
     
-    local start_cron="bash ${SELF_SCRIPT_PATH} scheduled_start"
-    local stop_cron="bash ${SELF_SCRIPT_PATH} scheduled_stop"
+    # 定义关键标识
+    local start_key="scheduled_start"
+    local stop_key="scheduled_stop"
+    local start_cron="bash ${SELF_SCRIPT_PATH} ${start_key}"
+    local stop_cron="bash ${SELF_SCRIPT_PATH} ${stop_key}"
     
-    local existing_start=$(crontab -l 2>/dev/null | grep "$start_cron")
-    local existing_stop=$(crontab -l 2>/dev/null | grep "$stop_cron")
+    # 读取状态 (增加 tail -n 1 确保只读最后一条，避免多条记录导致报错)
+    local existing_start=$(crontab -l 2>/dev/null | grep "${start_key}" | tail -n 1)
+    local existing_stop=$(crontab -l 2>/dev/null | grep "${stop_key}" | tail -n 1)
     
     if [ -n "$existing_start" ] && [ -n "$existing_stop" ]; then
-        # 提取分钟($1) 和 小时($2)
         local s_m=$(echo "$existing_start" | awk '{print $1}')
         local s_h=$(echo "$existing_start" | awk '{print $2}')
         local e_m=$(echo "$existing_stop" | awk '{print $1}')
         local e_h=$(echo "$existing_stop" | awk '{print $2}')
         
-        # 格式化显示 (补零)
-        printf " 当前状态: ${GREEN}已启用${NC} (启动: %02d:%02d | 停止: %02d:%02d)\n" "$s_h" "$s_m" "$e_h" "$e_m"
+        # 强制转换为十进制显示，防止 awk 读出的格式问题
+        printf " 当前状态: ${GREEN}已启用${NC} (启动: %02d:%02d | 停止: %02d:%02d)\n" $((s_h)) $((s_m)) $((e_h)) $((e_m))
     else
         echo -e " 当前状态: ${RED}未启用${NC}"
     fi
@@ -1011,34 +1014,41 @@ _scheduled_lifecycle_menu() {
             return
         fi
         
-        # 提取并转换为整数（去除前导0，防止bash识别为八进制，虽然crontab支持08，但校验逻辑需要）
+        # 提取并转换为整数 (10# 强制十进制，防止 08 被识别为八进制报错)
         local s_h=$((10#${BASH_REMATCH[1]})); local s_m=$((10#${BASH_REMATCH[2]}))
-        
-        # 再次匹配停止时间以获取变量
         [[ "$stop_input" =~ ^([0-9]{1,2}):([0-9]{1,2})$ ]]
         local e_h=$((10#${BASH_REMATCH[1]})); local e_m=$((10#${BASH_REMATCH[2]}))
 
-        # 数值范围校验
         if [ "$s_h" -gt 23 ] || [ "$s_m" -gt 59 ] || [ "$e_h" -gt 23 ] || [ "$e_m" -gt 59 ]; then
              _error "时间数值不合法 (小时 0-23, 分钟 0-59)"
              return
         fi
         
-        # 清理旧任务
-        crontab -l 2>/dev/null | grep -v "scheduled_start" | grep -v "scheduled_stop" | crontab -
+        _info "正在更新定时任务..."
         
-        # 添加新任务 (注意：Cron 格式是 分 时 * * *)
-        (crontab -l 2>/dev/null; echo "$s_m $s_h * * * $start_cron >> $LOG_FILE 2>&1") | crontab -
-        (crontab -l 2>/dev/null; echo "$e_m $e_h * * * $stop_cron >> $LOG_FILE 2>&1") | crontab -
+        # --- 原子写入逻辑 (关键修改) ---
+        # 1. 导出当前 crontab 到临时文件，并过滤掉我们的旧任务
+        crontab -l 2>/dev/null | grep -v "${start_key}" | grep -v "${stop_key}" > /tmp/cron.tmp
         
-        _success "定时计划已设置：每天 $start_input 启动， $stop_input 停止。"
+        # 2. 追加新任务到临时文件
+        echo "$s_m $s_h * * * $start_cron >> $LOG_FILE 2>&1" >> /tmp/cron.tmp
+        echo "$e_m $e_h * * * $stop_cron >> $LOG_FILE 2>&1" >> /tmp/cron.tmp
+        
+        # 3. 一次性导入，避免竞争和残留
+        if crontab /tmp/cron.tmp; then
+            rm -f /tmp/cron.tmp
+            _success "定时计划已设置：每天 $start_input 启动， $stop_input 停止。"
+        else
+            rm -f /tmp/cron.tmp
+            _error "写入 Crontab 失败，请检查系统权限。"
+        fi
         
     elif [ "$c" == "2" ]; then
-        crontab -l 2>/dev/null | grep -v "scheduled_start" | grep -v "scheduled_stop" | crontab -
+        # 同样使用原子操作清理
+        crontab -l 2>/dev/null | grep -v "${start_key}" | grep -v "${stop_key}" | crontab -
         _success "定时计划已移除。"
     fi
 }
-
 _main_menu() {
     while true; do
         clear
