@@ -988,26 +988,26 @@ _show_add_node_menu() {
     echo -e "\n\n\n"
 
     # 标题区：极简风格
-    echo -e "      ${CYAN}A D D   N O D E   M E N U${NC}"
-    echo -e "  ${GREY}──────────────────────────────────────${NC}"
+    echo -e "         ${CYAN}A D D   N O D E   M E N U${NC}"
+    echo -e "  ${GREY}─────────────────────────────────────────────${NC}"
     echo -e ""
 
     # 选项区：双列布局，手动对齐保证美观
     # 第一组：主流协议
-    echo -e "  ${WHITE}01.${NC}  VLESS-Reality       ${WHITE}02.${NC}  VLESS-WS-TLS"
-    echo -e "  ${WHITE}03.${NC}  Trojan-WS-TLS       ${WHITE}04.${NC}  AnyTLS"
+    echo -e "    ${WHITE}01.${NC}  VLESS-Reality       ${WHITE}02.${NC}  VLESS-WS-TLS"
+    echo -e "    ${WHITE}03.${NC}  Trojan-WS-TLS       ${WHITE}04.${NC}  AnyTLS"
     echo -e ""
     
     # 第二组：高性能/UDP
-    echo -e "  ${WHITE}05.${NC}  Hysteria2           ${WHITE}06.${NC}  TUICv5"
+    echo -e "    ${WHITE}05.${NC}  Hysteria2           ${WHITE}06.${NC}  TUICv5"
     
     # 第三组：传统/基础
-    echo -e "  ${WHITE}07.${NC}  Shadowsocks         ${WHITE}08.${NC}  VLESS-TCP"
-    echo -e "  ${WHITE}09.${NC}  SOCKS5"
+    echo -e "    ${WHITE}07.${NC}  Shadowsocks         ${WHITE}08.${NC}  VLESS-TCP"
+    echo -e "    ${WHITE}09.${NC}  SOCKS5"
 
     echo -e ""
-    echo -e "  ${GREY}───────────────────────────────────────${NC}"
-    echo -e "  ${WHITE}00.${NC}  返回主菜单"
+    echo -e "  ${GREY}──────────────────────────────────────────────${NC}"
+    echo -e "    ${WHITE}00.${NC}  返回主菜单"
     echo -e "\n"
 
     # 输入区
