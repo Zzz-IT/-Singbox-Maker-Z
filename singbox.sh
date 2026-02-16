@@ -4,6 +4,7 @@
 SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 SINGBOX_DIR="/usr/local/etc/sing-box"
 GITHUB_RAW_BASE="https://raw.githubusercontent.com/Zzz-IT/-Singbox-Maker-Z/main"
+
 SCRIPT_UPDATE_URL="${GITHUB_RAW_BASE}/singbox.sh"
 
 # --- 核心组件自动补全函数 ---
@@ -202,7 +203,7 @@ _add_argo_vless_ws() {
     if [ "$mode" == "2" ]; then
         type="fixed"
         echo -e "${CYAN}---------------------------------------------------------------${NC}"
-        echo -e "${CYAN}【固定隧道 Token 获取指南】${NC}"
+        echo -e "${CYAN} 固定隧道 Token 获取指南${NC} "
         echo "  1. 访问 https://one.dash.cloudflare.com/"
         echo "  2. 进入 Networks -> Tunnels -> Create a tunnel"
         echo "  3. 选择 Cloudflared，点击 Next"
@@ -224,7 +225,7 @@ _add_argo_vless_ws() {
         if [ -z "$domain" ]; then _error "域名不能为空"; return 1; fi
         
         echo ""
-        echo -e "${YELLOW}【重要提示：配置回源】${NC}"
+        echo -e "${YELLOW} 重要提示：配置回源${NC} "
         echo "  请回到 Cloudflare Tunnel 页面，点击 Next 进入 'Public Hostname' 设置："
         echo "  1. Public Hostname: 填写您刚才输入的域名 -> ${domain}"
         echo "  2. Service -> Type: 选择 HTTP"
@@ -294,7 +295,7 @@ _add_argo_trojan_ws() {
         type="fixed"
         # ... (同上 VLESS 的详细提示) ...
         echo -e "${CYAN}---------------------------------------------------------------${NC}"
-        echo -e "${CYAN}【固定隧道 Token 获取指南】${NC}"
+        echo -e "${CYAN} 固定隧道 Token 获取指南 ${NC}"
         echo "  请粘贴 Cloudflare Tunnel Token (支持直接粘贴CF网页端安装命令):"
         echo -e "${CYAN}---------------------------------------------------------------${NC}"
         read -p "Token: " input_token
@@ -306,7 +307,7 @@ _add_argo_trojan_ws() {
         read -p "请输入绑定的域名: " domain
         if [ -z "$domain" ]; then _error "域名不能为空"; return 1; fi
         
-        echo -e "${YELLOW}【请去 CF 配置回源】Public Hostname: ${domain} -> Service: http://localhost:${port}${NC}"
+        echo -e "${YELLOW} 请去 CF 配置回源 Public Hostname: ${domain} -> Service: http://localhost:${port}${NC}"
         read -n 1 -s -r -p "按任意键继续..."
         echo ""
     fi
