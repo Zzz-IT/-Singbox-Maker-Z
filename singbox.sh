@@ -79,19 +79,49 @@ _sanitize_tag() {
 
 # 依赖安装
 _install_dependencies() {
-    local pkgs="curl jq openssl wget procps iptables socat tar iproute2 cron" 
-    # 注意：增加了 cron 依赖
+    # 基础依赖
+    local pkgs="curl jq openssl wget procps iptables socat tar iproute2"
+    
+    # 根据发行版判断 cron 包名
+    if command -v apk &>/dev/null; then
+        pkgs="$pkgs dcron"  # Alpine 使用 dcron
+    elif command -v yum &>/dev/null || command -v dnf &>/dev/null; then
+        pkgs="$pkgs cronie" # RHEL系 使用 cronie
+    else
+        pkgs="$pkgs cron"   # Debian/Ubuntu 使用 cron
+    fi
+
     local needs_install=false
     for pkg in $pkgs; do
-        if ! command -v $pkg &>/dev/null && ! dpkg -l $pkg &>/dev/null 2>&1 && ! apk info -e $pkg &>/dev/null 2>&1; then
-            needs_install=true
-            break
+        # 针对 crontab 命令的特殊检测
+        if [[ "$pkg" == *"cron"* ]]; then
+            if ! command -v crontab &>/dev/null; then
+                needs_install=true
+                break
+            fi
+        else
+            if ! command -v $pkg &>/dev/null && ! dpkg -l $pkg &>/dev/null 2>&1 && ! apk info -e $pkg &>/dev/null 2>&1; then
+                needs_install=true
+                break
+            fi
         fi
     done
-    if [ "$needs_install" = true ]; then _info "正在预装依赖..."; _pkg_install $pkgs; fi
+
+    if [ "$needs_install" = true ]; then 
+        _info "正在预装依赖 (含计划任务服务)..."
+        _pkg_install $pkgs
+        
+        # 确保 cron 服务已启动
+        if [ "$INIT_SYSTEM" == "systemd" ]; then
+            systemctl enable cron 2>/dev/null || systemctl enable crond 2>/dev/null
+            systemctl start cron 2>/dev/null || systemctl start crond 2>/dev/null
+        elif [ "$INIT_SYSTEM" == "openrc" ]; then
+            rc-update add crond default 2>/dev/null
+            rc-service crond start 2>/dev/null
+        fi
+    fi
     _install_yq
 }
-
 _install_sing_box() {
     _info "正在安装 sing-box..."
     local arch=$(uname -m)
