@@ -3,7 +3,7 @@
 
 > 🚀 **专注小内存 VPS 优化** | 🛡️ **Argo 隧道守护** | ⏰ **定时生命周期管理**
 
-本项目基于 [**singbox-lite**](https://github.com/0xdabiaoge/singbox-lite) 进行**模块化重构**，拆分为核心、工具、解析三部分。针对低配置环境（如 Alpine/128M）深度优化内存占用，并新增了企业级的 Argo 进程守护与定时启停功能。
+本项目基于 [**singbox-lite**](https://github.com/0xdabiaoge/singbox-lite) 进行**魔改**，精简功能，加入定时启停，重构UI。针对低配置环境（如 Alpine/128M）深度优化内存占用，并新增了企业级的 Argo 进程守护与定时启停功能。
 
 ## ✨ 核心特性
 
@@ -36,7 +36,7 @@ sb -q
 
 * ✅ **端口防冲**：自动生成随机端口并强制去重
 * ✅ **默认伪装**：SNI 默认使用 `www.apple.com`
-* ✅ **自动展示**：SSH 登录欢迎语 (`/etc/motd`) 自动显示节点信息
+* ✅ **自动展示**：自动展示系统版本和运行方式
 * ✅ **即刻管理**：部署后可运行 `sb` 进入管理菜单
 
 ---
@@ -72,6 +72,7 @@ sb -q
 ---
 
 <p align="center">Made with ❤️ by Zzz-IT</p>
+
 
 
 
