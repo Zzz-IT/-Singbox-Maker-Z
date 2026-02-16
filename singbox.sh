@@ -122,6 +122,45 @@ _install_dependencies() {
     fi
     _install_yq
 }
+
+# --- 自动设置北京时间函数 ---
+_set_beijing_timezone() {
+    # 检查当前时区是否已经是 CST (Asia/Shanghai)
+    if date | grep -q "CST"; then
+        return
+    fi
+
+    _info "检测到时区非北京时间，正在自动修正..."
+    
+    # 1. Alpine Linux 处理逻辑
+    if [ -f /etc/alpine-release ]; then
+        if ! apk info -e tzdata >/dev/null 2>&1; then
+            apk add --no-cache tzdata >/dev/null 2>&1
+        fi
+        cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
+        echo "Asia/Shanghai" > /etc/timezone
+        _success "Alpine 时区已修正为北京时间"
+        return
+    fi
+
+    # 2. Debian/Ubuntu/CentOS (Systemd) 处理逻辑
+    if command -v timedatectl &>/dev/null; then
+        # 使用标准 systemd 工具
+        timedatectl set-timezone Asia/Shanghai
+        _success "Systemd 时区已修正为北京时间"
+    else
+        # 容器或精简环境的回退方案 (直接软链接)
+        if [ -f /usr/share/zoneinfo/Asia/Shanghai ]; then
+            rm -f /etc/localtime
+            ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
+            echo "Asia/Shanghai" > /etc/timezone
+            _success "强制修正时区文件为北京时间"
+        else
+            _warn "未找到时区文件，跳过设置。"
+        fi
+    fi
+}
+
 _install_sing_box() {
     _info "正在安装 sing-box..."
     local arch=$(uname -m)
@@ -972,8 +1011,9 @@ _do_scheduled_stop() {
 }
 
 _scheduled_lifecycle_menu() {
-    echo -e " ${CYAN}--- 定时启停管理 (宵禁模式) ---${NC}"
+    echo -e " ${CYAN}--- 定时启停管理 ---${NC}"
     echo -e " 功能说明: 每天指定时间(精确到分)自动启动和停止所有服务"
+    echo -e " 系统时间: ${YELLOW}$(date "+%Y-%m-%d %H:%M:%S") (CST)${NC}"
     
     local start_key="scheduled_start"
     local stop_key="scheduled_stop"
@@ -999,7 +1039,7 @@ _scheduled_lifecycle_menu() {
     fi
     echo ""
     echo -e " ${GREEN}[1]${NC} 设置/修改 定时计划"
-    echo -e " ${RED}[2]${NC} 删除 所有定时计划"
+    echo -e " ${RED}[2]${NC} 删除 定时计划"
     echo -e " ${YELLOW}[0]${NC} 返回"
     
     read -p "选择: " c
@@ -1142,6 +1182,8 @@ _main_menu() {
 
 main() {
     _check_root; _detect_init_system
+    _set_beijing_timezone
+    
     mkdir -p "${SINGBOX_DIR}" 2>/dev/null
     _install_dependencies; _init_server_ip
     local first=false
