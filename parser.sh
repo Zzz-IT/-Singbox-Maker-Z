@@ -3,7 +3,7 @@
 # 引入工具库 (Self-Initialization Logic)
 SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 SINGBOX_DIR="/usr/local/etc/sing-box"
-GITHUB_RAW_BASE="https://raw.githubusercontent.com/0xdabiaoge/singbox-lite/main"
+GITHUB_RAW_BASE="https://raw.githubusercontent.com/Zzz-IT/-Singbox-Maker-Z/main"
 
 if [ -f "$SCRIPT_DIR/utils.sh" ]; then
     source "$SCRIPT_DIR/utils.sh"

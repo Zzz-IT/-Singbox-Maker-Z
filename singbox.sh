@@ -3,7 +3,7 @@
 # 基础路径定义
 SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 SINGBOX_DIR="/usr/local/etc/sing-box"
-GITHUB_RAW_BASE="https://raw.githubusercontent.com/0xdabiaoge/singbox-lite/main"
+GITHUB_RAW_BASE="https://raw.githubusercontent.com/Zzz-IT/-Singbox-Maker-Z/main"
 
 # --- 核心组件自动补全函数 ---
 _download_missing_component() {
@@ -859,9 +859,28 @@ _modify_port() {
 _check_config() { if ${SINGBOX_BIN} check -c ${CONFIG_FILE}; then _success "配置 (${CONFIG_FILE}) 正确"; else _error "配置错误"; fi; }
 _update_script() {
     _info "正在更新主脚本..."
+    # 使用双引号包裹路径，防止仓库名开头的 "-" 引起识别错误
     local temp="${SELF_SCRIPT_PATH}.tmp"
-    if wget -qO "$temp" "$SCRIPT_UPDATE_URL"; then chmod +x "$temp"; mv "$temp" "$SELF_SCRIPT_PATH"; _success "主脚本更新成功！"; else _error "下载失败"; fi
-    _info "正在更新 utils.sh..."; local u_path="${SINGBOX_DIR}/utils.sh"; wget -qO "$u_path" "${GITHUB_RAW_BASE}/utils.sh" && chmod +x "$u_path" && _success "utils.sh 更新成功"; exit 0
+    
+    if wget -qO "$temp" "$SCRIPT_UPDATE_URL"; then 
+        chmod +x "$temp"
+        mv "$temp" "$SELF_SCRIPT_PATH"
+        _success "主脚本更新成功！"
+    else 
+        _error "下载失败"
+    fi
+
+    _info "正在更新 utils.sh..."
+    local u_path="${SINGBOX_DIR}/utils.sh"
+    # 从您的新基础网址下载 utils.sh
+    if wget -qO "$u_path" "${GITHUB_RAW_BASE}/utils.sh"; then
+        chmod +x "$u_path"
+        _success "utils.sh 更新成功"
+    else
+        _error "utils.sh 下载失败"
+    fi
+    
+    exit 0
 }
 _update_singbox_core() { _install_sing_box; _manage_service "restart"; }
 _show_add_node_menu() {
