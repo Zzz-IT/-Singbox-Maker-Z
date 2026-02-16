@@ -533,7 +533,7 @@ _argo_menu() {
         echo -e "\n\n\n"
 
         # 标题区
-        echo -e "  ${CYAN}A R G O   T U N N E L   M A N A G E R${NC}"
+        echo -e "  ${CYAN}  A R G O   T U N N E L   M A N A G E R${NC}"
         echo -e "  ${GREY}───────────────────────────────────────${NC}"
         echo -e ""
 
@@ -988,7 +988,7 @@ _show_add_node_menu() {
     echo -e "\n\n\n"
 
     # 标题区：极简风格
-    echo -e "  ${CYAN}A D D   N O D E   M E N U${NC}"
+    echo -e "  ${CYAN}  A D D   N O D E   M E N U${NC}"
     echo -e "  ${GREY}───────────────────────────────────────${NC}"
     echo -e ""
 
@@ -1188,10 +1188,8 @@ _main_menu() {
         echo '             /____/     [ M A K E R  Z ]   '
         echo -e "${NC}"
         
-        # ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
-        # 🟢 您的选择：方案 2 (Network Dashboard)
-        # ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
-        echo -e "  ${CYAN}N E T W O R K   D A S H B O A R D${NC}"
+      
+        echo -e "  ${CYAN}  N E T W O R K   D A S H B O A R D${NC}"
         
         # ----------------------------------------------------------------
         # 2. 系统信息仪表盘 (动态获取逻辑)
