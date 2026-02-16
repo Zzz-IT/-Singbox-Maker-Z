@@ -299,7 +299,7 @@ _add_argo_vless_ws() {
         echo ""
     fi
 
-    local default_name="Argo-Vless-${port}"
+    local default_name="Argo-Vless" 
     read -p "请输入节点名称 (默认: ${default_name}): " name
     name=${name:-$default_name}
     
@@ -375,7 +375,7 @@ _add_argo_trojan_ws() {
         echo ""
     fi
     
-    local default_name="Argo-Trojan-${port}"
+    local default_name="Argo-Trojan"
     read -p "请输入节点名称 (默认: ${default_name}): " name
     name=${name:-$default_name}
     
@@ -687,7 +687,7 @@ _add_vless_ws_tls() {
     [[ "$client_server_addr" == *":"* && "$client_server_addr" != "["* ]] && client_server_addr="[${client_server_addr}]"
     read -p "伪装域名: " camouflage_domain; [ -z "$camouflage_domain" ] && return 1
     read -p "监听端口: " port; [ -z "$port" ] && return 1
-    local dn="VLESS-WS-${port}"; [ "$is_cdn_mode" == "true" ] && dn="VLESS-CDN-443"
+    local dn="VLESS-WS"; [ "$is_cdn_mode" == "true" ] && dn="VLESS-CDN-443"
     read -p "名称 (默认 $dn): " cn; name=${cn:-$dn}
     local safe_name=$(_sanitize_tag "$name"); local tag="${safe_name}_${port}"
     if jq -e ".inbounds[] | select(.tag == \"$tag\")" "$CONFIG_FILE" >/dev/null 2>&1; then tag="${tag}_$(openssl rand -hex 2)"; fi
@@ -695,7 +695,7 @@ _add_vless_ws_tls() {
     read -p "WS路径 (回车随机): " w; ws_path=${w:-"/"$(${SINGBOX_BIN} generate rand --hex 8)}; [[ ! "$ws_path" == /* ]] && ws_path="/${ws_path}"
     local cert_path="${SINGBOX_DIR}/${tag}.pem" key_path="${SINGBOX_DIR}/${tag}.key" skip_verify=false
     read -p "证书类型 (1.自签 2.上传): " cert_choice; cert_choice=${cert_choice:-1}
-    if [ "$cert_choice" == "1" ]; then _generate_self_signed_cert "$camouflage_domain" "$cert_path" "$key_path" || return 1; skip_verify=true
+    if [ "$cert_choice" == "1" ]; 键，然后 _generate_self_signed_cert "$camouflage_domain" "$cert_path" "$key_path" || return 1; skip_verify=true
     else read -p "证书路径: " cert_path; read -p "私钥路径: " key_path; read -p "跳过验证? (y/N): " u; [[ "$u" == "y" ]] && skip_verify=true; fi
     local uuid=$(${SINGBOX_BIN} generate uuid)
     local inbound=$(jq -n --arg t "$tag" --arg p "$port" --arg u "$uuid" --arg cp "$cert_path" --arg kp "$key_path" --arg w "$ws_path" '{"type":"vless","tag":$t,"listen":"::","listen_port":($p|tonumber),"users":[{"uuid":$u,"flow":""}],"tls":{"enabled":true,"certificate_path":$cp,"key_path":$kp},"transport":{"type":"ws","path":$w}}')
@@ -707,15 +707,15 @@ _add_vless_ws_tls() {
 
 _add_trojan_ws_tls() {
     local camouflage_domain="" port="" is_cdn_mode=false client_server_addr="${server_ip}" name=""
-    read -p "连接模式 (1.直连 2.优选): " m; if [ "$m" == "2" ]; then is_cdn_mode=true; read -p "优选域名: " c; client_server_addr=${c:-"www.visa.com.sg"}; else read -p "连接地址: " c; client_server_addr=${c:-$server_ip}; fi
-    read -p "伪装域名: " camouflage_domain; read -p "监听端口: " port; local dn="Trojan-WS-${port}"; read -p "名称 (默认 $dn): " cn; name=${cn:-$dn}
+    read -p "连接模式 (1.直连 2.优选): " m; if [ "$m" == "2" ]; 键，然后 is_cdn_mode=true; read -p "优选域名: " c; client_server_addr=${c:-"www.visa.com.sg"}; else read -p "连接地址: " c; client_server_addr=${c:-$server_ip}; fi
+    read -p "伪装域名: " camouflage_domain; read -p "监听端口: " port; local dn="Trojan-WS"; read -p "名称 (默认 $dn): " cn; name=${cn:-$dn}
     local safe_name=$(_sanitize_tag "$name"); local tag="${safe_name}_${port}"
     if jq -e ".inbounds[] | select(.tag == \"$tag\")" "$CONFIG_FILE" >/dev/null 2>&1; then tag="${tag}_$(openssl rand -hex 2)"; fi
     local client_port="$port"; [ "$is_cdn_mode" == "true" ] && client_port="443"
     read -p "WS路径: " w; ws_path=${w:-"/"$(${SINGBOX_BIN} generate rand --hex 8)}
     local cert_path="${SINGBOX_DIR}/${tag}.pem" key_path="${SINGBOX_DIR}/${tag}.key" skip_verify=false
     read -p "证书类型 (1.自签 2.上传): " cert_choice; cert_choice=${cert_choice:-1}
-    if [ "$cert_choice" == "1" ]; then _generate_self_signed_cert "$camouflage_domain" "$cert_path" "$key_path" || return 1; skip_verify=true
+    if [ "$cert_choice" == "1" ]; 键，然后 _generate_self_signed_cert "$camouflage_domain" "$cert_path" "$key_path" || return 1; skip_verify=true
     else read -p "证书路径: " cert_path; read -p "私钥路径: " key_path; read -p "跳过验证? (y/N): " u; [[ "$u" == "y" ]] && skip_verify=true; fi
     read -p "密码: " p; password=${p:-$(${SINGBOX_BIN} generate rand --hex 16)}
     local inbound=$(jq -n --arg t "$tag" --arg p "$port" --arg pw "$password" --arg cp "$cert_path" --arg kp "$key_path" --arg w "$ws_path" '{"type":"trojan","tag":$t,"listen":"::","listen_port":($p|tonumber),"users":[{"password":$pw}],"tls":{"enabled":true,"certificate_path":$cp,"key_path":$kp},"transport":{"type":"ws","path":$w}}')
@@ -727,11 +727,11 @@ _add_trojan_ws_tls() {
 
 _add_anytls() {
     local node_ip="${server_ip}" port="" server_name="www.apple.com" name=""
-    read -p "监听端口: " port; read -p "SNI (默认 www.apple.com): " sn; server_name=${sn:-"www.apple.com"}; read -p "名称 (默认 AnyTLS-${port}): " cn; name=${cn:-"AnyTLS-${port}"}
+    read -p "监听端口: " port; read -p "SNI (默认 www.apple.com): " sn; server_name=${sn:-"www.apple.com"}; read -p "名称 (默认 AnyTLS): " cn; name=${cn:-"AnyTLS"}
     local safe_name=$(_sanitize_tag "$name"); local tag="${safe_name}_${port}"; if jq -e ".inbounds[] | select(.tag == \"$tag\")" "$CONFIG_FILE" >/dev/null 2>&1; then tag="${tag}_$(openssl rand -hex 2)"; fi
     read -p "证书类型 (1.自签 2.上传): " cert_choice; cert_choice=${cert_choice:-1}
     local cert_path="" key_path="" skip_verify=true
-    if [ "$cert_choice" == "1" ]; then cert_path="${SINGBOX_DIR}/${tag}.pem"; key_path="${SINGBOX_DIR}/${tag}.key"; _generate_self_signed_cert "$server_name" "$cert_path" "$key_path" || return 1
+    if [ "$cert_choice" == "1" ]; 键，然后 cert_path="${SINGBOX_DIR}/${tag}.pem"; key_path="${SINGBOX_DIR}/${tag}.key"; _generate_self_signed_cert "$server_name" "$cert_path" "$key_path" || return 1
     else read -p "证书路径: " cert_path; read -p "私钥路径: " key_path; read -p "跳过验证? (y/N): " u; [[ "$u" == "y" ]] && skip_verify=true; fi
     read -p "密码/UUID: " p; password=${p:-$(${SINGBOX_BIN} generate uuid)}; local link_ip="$node_ip"; [[ "$node_ip" == *":"* ]] && link_ip="[$node_ip]"
     local inbound=$(jq -n --arg t "$tag" --arg p "$port" --arg pw "$password" --arg sn "$server_name" --arg cp "$cert_path" --arg kp "$key_path" '{"type": "anytls", "tag": $t, "listen": "::", "listen_port": ($p|tonumber), "users": [{"name": "default", "password": $pw}], "padding_scheme": ["stop=2","0=100-200","1=100-200"], "tls": {"enabled": true, "server_name": $sn, "certificate_path": $cp, "key_path": $kp}}')
@@ -743,7 +743,7 @@ _add_anytls() {
 
 _add_vless_reality() {
     local node_ip="${server_ip}" port="" server_name="www.apple.com" name=""
-    read -p "伪装域名 (默认 www.apple.com): " sn; server_name=${sn:-"www.apple.com"}; read -p "监听端口: " port; read -p "名称 (默认 VLESS-REALITY-${port}): " cn; name=${cn:-"VLESS-REALITY-${port}"}
+    read -p "伪装域名 (默认 www.apple.com): " sn; server_name=${sn:-"www.apple.com"}; read -p "监听端口: " port; read -p "名称 (默认 VLESS-REALITY): " cn; name=${cn:-"VLESS-REALITY"}
     local safe_name=$(_sanitize_tag "$name"); local tag="${safe_name}_${port}"; if jq -e ".inbounds[] | select(.tag == \"$tag\")" "$CONFIG_FILE" >/dev/null 2>&1; then tag="${tag}_$(openssl rand -hex 2)"; fi
     local uuid=$(${SINGBOX_BIN} generate uuid); local keypair=$(${SINGBOX_BIN} generate reality-keypair)
     local pk=$(echo "$keypair" | awk '/PrivateKey/ {print $2}'); local pbk=$(echo "$keypair" | awk '/PublicKey/ {print $2}'); local sid=$(${SINGBOX_BIN} generate rand --hex 8)
@@ -757,7 +757,7 @@ _add_vless_reality() {
 
 _add_vless_tcp() {
     local node_ip="${server_ip}" port="" name=""
-    read -p "监听端口: " port; read -p "名称 (默认 VLESS-TCP-${port}): " cn; name=${cn:-"VLESS-TCP-${port}"}
+    read -p "监听端口: " port; read -p "名称 (默认 VLESS-TCP): " cn; name=${cn:-"VLESS-TCP"}
     local safe_name=$(_sanitize_tag "$name"); local tag="${safe_name}_${port}"; if jq -e ".inbounds[] | select(.tag == \"$tag\")" "$CONFIG_FILE" >/dev/null 2>&1; then tag="${tag}_$(openssl rand -hex 2)"; fi
     local uuid=$(${SINGBOX_BIN} generate uuid); local link_ip="$node_ip"; [[ "$node_ip" == *":"* ]] && link_ip="[$node_ip]"
     local inbound=$(jq -n --arg t "$tag" --arg p "$port" --arg u "$uuid" '{"type":"vless","tag":$t,"listen":"::","listen_port":($p|tonumber),"users":[{"uuid":$u,"flow":""}],"tls":{"enabled":false}}')
@@ -769,7 +769,7 @@ _add_vless_tcp() {
 
 _add_hysteria2() {
     local node_ip="${server_ip}" port="" server_name="www.apple.com" obfs_password="" port_hopping="" use_multiport="false" name=""
-    read -p "监听端口: " port; read -p "伪装域名 (默认 www.apple.com): " sn; server_name=${sn:-"www.apple.com"}; read -p "名称 (默认 Hysteria2-${port}): " cn; name=${cn:-"Hysteria2-${port}"}
+    read -p "监听端口: " port; read -p "伪装域名 (默认 www.apple.com): " sn; server_name=${sn:-"www.apple.com"}; read -p "名称 (默认 Hysteria2): " cn; name=${cn:-"Hysteria2"}
     local safe_name=$(_sanitize_tag "$name"); local tag="${safe_name}_${port}"; if jq -e ".inbounds[] | select(.tag == \"$tag\")" "$CONFIG_FILE" >/dev/null 2>&1; then tag="${tag}_$(openssl rand -hex 2)"; fi
     local cert_path="${SINGBOX_DIR}/${tag}.pem"; local key_path="${SINGBOX_DIR}/${tag}.key"; _generate_self_signed_cert "$server_name" "$cert_path" "$key_path" || return 1
     read -p "密码: " pw; password=${pw:-$(${SINGBOX_BIN} generate rand --hex 16)}
@@ -795,7 +795,7 @@ _add_hysteria2() {
 
 _add_tuic() {
     local node_ip="${server_ip}" port="" server_name="www.apple.com" name=""
-    read -p "监听端口: " port; read -p "SNI: " sn; server_name=${sn:-"www.apple.com"}; read -p "名称 (默认 TUICv5-${port}): " cn; name=${cn:-"TUICv5-${port}"}
+    read -p "监听端口: " port; read -p "SNI: " sn; server_name=${sn:-"www.apple.com"}; read -p "名称 (默认 TUICv5): " cn; name=${cn:-"TUICv5"}
     local safe_name=$(_sanitize_tag "$name"); local tag="${safe_name}_${port}"; if jq -e ".inbounds[] | select(.tag == \"$tag\")" "$CONFIG_FILE" >/dev/null 2>&1; then tag="${tag}_$(openssl rand -hex 2)"; fi
     local cert_path="${SINGBOX_DIR}/${tag}.pem" key_path="${SINGBOX_DIR}/${tag}.key"; _generate_self_signed_cert "$server_name" "$cert_path" "$key_path" || return 1
     local uuid=$(${SINGBOX_BIN} generate uuid); local password=$(${SINGBOX_BIN} generate rand --hex 16); local link_ip="$node_ip"; [[ "$node_ip" == *":"* ]] && link_ip="[$node_ip]"
@@ -815,7 +815,7 @@ _add_shadowsocks_menu() {
         3) method="2022-blake3-aes-128-gcm"; password=$(${SINGBOX_BIN} generate rand --base64 16); name_prefix="SS-2022-Padding"; use_multiplex=true ;;
         *) return 1 ;;
     esac
-    read -p "端口: " port; read -p "名称 (默认 ${name_prefix}-${port}): " cn; name=${cn:-"${name_prefix}-${port}"}
+    read -p "端口: " port; read -p "名称 (默认 ${name_prefix}): " cn; name=${cn:-"${name_prefix}"}
     local safe_name=$(_sanitize_tag "$name"); local tag="${safe_name}_${port}"; if jq -e ".inbounds[] | select(.tag == \"$tag\")" "$CONFIG_FILE" >/dev/null 2>&1; then tag="${tag}_$(openssl rand -hex 2)"; fi
     local link_ip="${server_ip}"; [[ "$server_ip" == *":"* ]] && link_ip="[$server_ip]"
     local inbound=$(jq -n --arg t "$tag" --arg p "$port" --arg m "$method" --arg pw "$password" '{"type": "shadowsocks", "tag": $t, "listen": "::", "listen_port": ($p|tonumber), "method": $m, "password": $pw}')
@@ -829,7 +829,7 @@ _add_shadowsocks_menu() {
 
 _add_socks() {
     local port="" u="" p="" name=""
-    read -p "端口: " port; read -p "用户: " u; u=${u:-$(${SINGBOX_BIN} generate rand --hex 8)}; read -p "密码: " p; p=${p:-$(${SINGBOX_BIN} generate rand --hex 16)}; read -p "名称: " cn; name=${cn:-"SOCKS5-${port}"}
+    read -p "端口: " port; read -p "用户: " u; u=${u:-$(${SINGBOX_BIN} generate rand --hex 8)}; read -p "密码: " p; p=${p:-$(${SINGBOX_BIN} generate rand --hex 16)}; read -p "名称 (默认 SOCKS5): " cn; name=${cn:-"SOCKS5"}
     local safe_name=$(_sanitize_tag "$name"); local tag="${safe_name}_${port}"; if jq -e ".inbounds[] | select(.tag == \"$tag\")" "$CONFIG_FILE" >/dev/null 2>&1; then tag="${tag}_$(openssl rand -hex 2)"; fi
     local link_ip="${server_ip}"; [[ "$server_ip" == *":"* ]] && link_ip="[$server_ip]"
     local inbound=$(jq -n --arg t "$tag" --arg p "$port" --arg u "$u" --arg pw "$p" '{"type":"socks","tag":$t,"listen":"::","listen_port":($p|tonumber),"users":[{"username":$u,"password":$pw}]}')
@@ -1040,14 +1040,6 @@ _quick_deploy() {
     export BATCH_PORT="$p2"; _add_hysteria2
     export BATCH_PORT="$p3"; _add_tuic
     unset BATCH_MODE BATCH_PORT BATCH_SNI; _manage_service "restart"
-    cat > "/etc/motd" << EOF
-=== sing-box 节点 ===
-IP: ${server_ip}
-VLESS-Reality: $p1
-Hysteria2: $p2
-TUIC: $p3
-运行 sb 管理
-EOF
     _success "快速部署完成！"
 }
 
