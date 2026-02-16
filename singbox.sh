@@ -1219,10 +1219,10 @@ _main_menu() {
         fi
 
         # 仪表盘显示区 (分割线与状态)
-        echo -e "  ${GREY}────────────────────────────────────────────${NC}"
+        echo -e "  ${GREY}───────────────────────────────────────────${NC}"
         echo -e "   ${CYAN}SYSTEM:${NC} ${WHITE}${os_info}${NC}"
         echo -e "   ${CYAN}CORE  :${NC} ${service_status}      ${CYAN}ARGO  :${NC} ${argo_status}"
-        echo -e "  ${GREY}────────────────────────────────────────────${NC}"
+        echo -e "  ${GREY}───────────────────────────────────────────${NC}"
         echo -e ""
 
         # ----------------------------------------------------------------
@@ -1230,26 +1230,26 @@ _main_menu() {
         # ----------------------------------------------------------------
         
         # --- 节点管理 ---
-        echo -e "  ${CYAN}NODE MANAGER${NC}"
-        echo -e "  ${WHITE}01.${NC} 添加节点            ${WHITE}02.${NC} Argo 隧道"
-        echo -e "  ${WHITE}03.${NC} 查看链接            ${WHITE}04.${NC} 删除节点"
-        echo -e "  ${WHITE}05.${NC} 修改端口"
+        echo -e "    ${CYAN}NODE MANAGER${NC}"
+        echo -e "    ${WHITE}01.${NC} 添加节点            ${WHITE}02.${NC} Argo 隧道"
+        echo -e "    ${WHITE}03.${NC} 查看链接            ${WHITE}04.${NC} 删除节点"
+        echo -e "    ${WHITE}05.${NC} 修改端口"
         echo -e ""
 
         # --- 服务控制 ---
-        echo -e "  ${CYAN}SERVICE CONTROL${NC}"
-        echo -e "  ${WHITE}06.${NC} 重启服务            ${WHITE}07.${NC} 停止服务"
-        echo -e "  ${WHITE}08.${NC} 运行状态            ${WHITE}09.${NC} 实时日志"
-        echo -e "  ${WHITE}10.${NC} 定时任务 "
+        echo -e "    ${CYAN}SERVICE CONTROL${NC}"
+        echo -e "    ${WHITE}06.${NC} 重启服务            ${WHITE}07.${NC} 停止服务"
+        echo -e "    ${WHITE}08.${NC} 运行状态            ${WHITE}09.${NC} 实时日志"
+        echo -e "    ${WHITE}10.${NC} 定时任务 "
         echo -e ""
 
         # --- 维护与更新 ---
-        echo -e "  ${CYAN}MAINTENANCE${NC}"
-        echo -e "  ${WHITE}11.${NC} 检查配置            ${WHITE}12.${NC} 更新脚本"
-        echo -e "  ${WHITE}13.${NC} 更新核心            ${RED}14.${NC} 卸载脚本"
+        echo -e "    ${CYAN}MAINTENANCE${NC}"
+        echo -e "    ${WHITE}11.${NC} 检查配置            ${WHITE}12.${NC} 更新脚本"
+        echo -e "    ${WHITE}13.${NC} 更新核心            ${RED}14.${NC} 卸载脚本"
         
-        echo -e "\n  ${GREY}────────────────────────────────────────────${NC}"
-        echo -e "  ${WHITE}00.${NC} 退出脚本"
+        echo -e "\n  ${GREY}───────────────────────────────────────────${NC}"
+        echo -e "    ${WHITE}00.${NC} 退出脚本"
         echo -e ""
 
         # ----------------------------------------------------------------
