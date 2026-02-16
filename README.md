@@ -1,16 +1,17 @@
-# Singbox Maker Z 
 
-> 🚀 \*\*专注小内存 VPS 优化\*\* | 🛡️ \*\*Argo 隧道守护\*\* | ⏰ \*\*定时生命周期管理\*\*
+# Singbox Maker Z
 
-本项目基于 \*\*\[singbox-lite](https://github.com/0xdabiaoge/singbox-lite)\*\* 进行\*\*模块化重构\*\*，拆分为核心、工具、解析三部分。针对低配置环境（如 Alpine/128M）深度优化内存占用，并新增了企业级的 Argo 进程守护与定时启停功能。
+> 🚀 **专注小内存 VPS 优化** | 🛡️ **Argo 隧道守护** | ⏰ **定时生命周期管理**
+
+本项目基于 [**singbox-lite**](https://github.com/0xdabiaoge/singbox-lite) 进行**模块化重构**，拆分为核心、工具、解析三部分。针对低配置环境（如 Alpine/128M）深度优化内存占用，并新增了企业级的 Argo 进程守护与定时启停功能。
 
 ## ✨ 核心特性
 
-\* \*\*🛡️ Argo 隧道全家桶\*\*：集成 \*\*TryCloudflare\*\* (临时) 与 \*\*Token\*\* (固定) 双模式，支持 VLESS/Trojan 穿透。
-\* \*\*🐶 独家看门狗 (Watchdog)\*\*：内置进程守护，\*\*每分钟\*\*检测隧道状态，断连自动拉起，确保持久在线。
-\* \*\*⏰ 生命周期管理\*\*：支持设置精确的\*\*“工作时间”\*\*（如 08:30 启动，02:15 停止），适合按量付费或定时静默场景。
-\* \*\*🧩 模块化架构\*\*：重构为 `singbox.sh` (控制)、`utils.sh` (工具)、`parser.sh` (解析)，自动热更新核心组件。
-\* \*\*🧠 智能优化\*\*：动态计算 `GOMEMLIMIT` 防止 OOM，自动规避小内存机器 `apt-get` 死机问题。
+* **🛡️ Argo 隧道全家桶**：集成 **TryCloudflare** (临时) 与 **Token** (固定) 双模式，支持 VLESS/Trojan 穿透。
+* **🐶 独家看门狗 (Watchdog)**：内置进程守护，**每分钟**检测隧道状态，断连自动拉起，确保持久在线。
+* **⏰ 生命周期管理**：支持设置精确的**“工作时间”**（如 08:30 启动，02:15 停止），适合按量付费或定时静默场景。
+* **🧩 模块化架构**：重构为 `singbox.sh` (控制)、`utils.sh` (工具)、`parser.sh` (解析)，自动热更新核心组件。
+* **🧠 智能优化**：动态计算 `GOMEMLIMIT` 防止 OOM，自动规避小内存机器 `apt-get` 死机问题。
 
 ---
 
@@ -21,17 +22,14 @@
 自动识别系统环境并安装至 `/usr/local/bin/sb`：
 
 ```bash
-(curl -LfsS \[https://raw.githubusercontent.com/Zzz-IT/-Singbox-Maker-Z/main/singbox.sh](https://raw.githubusercontent.com/Zzz-IT/-Singbox-Maker-Z/main/singbox.sh) -o /usr/local/bin/sb || wget -q \[https://raw.githubusercontent.com/Zzz-IT/-Singbox-Maker-Z/main/singbox.sh](https://raw.githubusercontent.com/Zzz-IT/-Singbox-Maker-Z/main/singbox.sh) -O /usr/local/bin/sb) \&\& chmod +x /usr/local/bin/sb \&\& sb
-
+(curl -LfsS [https://raw.githubusercontent.com/Zzz-IT/-Singbox-Maker-Z/main/singbox.sh](https://raw.githubusercontent.com/Zzz-IT/-Singbox-Maker-Z/main/singbox.sh) -o /usr/local/bin/sb || wget -q [https://raw.githubusercontent.com/Zzz-IT/-Singbox-Maker-Z/main/singbox.sh](https://raw.githubusercontent.com/Zzz-IT/-Singbox-Maker-Z/main/singbox.sh) -O /usr/local/bin/sb) && chmod +x /usr/local/bin/sb && sb
 ```
-
 ### ⚡ 快速部署
 
 安装完成后，输入以下指令即可自动部署 **VLESS-Reality**、**Hysteria2**、**TUICv5** 三节点：
 
 ```bash
 sb -q
-
 ```
 
 **特点**：
@@ -75,7 +73,4 @@ sb -q
 
 <p align="center">Made with ❤️ by Zzz-IT</p>
 
-```
-
-```
 
