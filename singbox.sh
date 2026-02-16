@@ -533,7 +533,7 @@ _argo_menu() {
         echo -e "\n\n\n"
 
         # 标题区
-        echo -e "    ${CYAN}A R G O   T U N N E L   M A N A G E R${NC}"
+        echo -e "      ${CYAN}A R G O   T U N N E L   M A N A G E R${NC}"
         echo -e "  ${GREY}──────────────────────────────────────────${NC}"
         echo -e ""
 
