@@ -977,7 +977,7 @@ _update_script() {
 }
 _update_singbox_core() { _install_sing_box; _manage_service "restart"; }
 _show_add_node_menu() {
-    # 局部颜色定义，防止污染
+    # 局部颜色定义
     local CYAN='\033[0;36m'
     local WHITE='\033[1;37m'
     local GREY='\033[0;37m'
@@ -987,12 +987,13 @@ _show_add_node_menu() {
     # 顶部留白
     echo -e "\n\n\n"
 
-    # 标题区：极简风格
-    echo -e "             ${CYAN}A D D   N O D E   M E N U${NC}"
-    echo -e "  ${GREY}─────────────────────────────────────────────────${NC}"
+    # 标题区：已修复居中
+    # 标题缩进 14 空格，分割线缩进 4 空格，长度 45
+    echo -e "              ${CYAN}A D D   N O D E   M E N U${NC}"
+    echo -e "    ${GREY}─────────────────────────────────────────────${NC}"
     echo -e ""
 
-    # 选项区：双列布局，手动对齐保证美观
+    # 选项区：双列布局 (缩进 5 空格)
     # 第一组：主流协议
     echo -e "     ${WHITE}01.${NC}  VLESS-Reality       ${WHITE}02.${NC}  VLESS-WS-TLS"
     echo -e "     ${WHITE}03.${NC}  Trojan-WS-TLS       ${WHITE}04.${NC}  AnyTLS"
@@ -1006,12 +1007,12 @@ _show_add_node_menu() {
     echo -e "     ${WHITE}09.${NC}  SOCKS5"
 
     echo -e ""
-    echo -e "  ${GREY}──────────────────────────────────────────────────${NC}"
+    echo -e "    ${GREY}─────────────────────────────────────────────${NC}"
     echo -e "     ${WHITE}00.${NC}  返回主菜单"
     echo -e "\n"
 
-    # 输入区
-    read -e -p "  请选择协议 > " c
+    # 输入区 (对齐缩进)
+    read -e -p "     请选择协议 > " c
     
     case $c in
         1|01) _add_vless_reality ;; 
@@ -1024,13 +1025,12 @@ _show_add_node_menu() {
         8|08) _add_vless_tcp ;; 
         9|09) _add_socks ;;
         0|00) return ;;
-        *) echo -e "\n  ${GREY}无效选项，取消操作...${NC}"; sleep 1; return ;; 
+        *) echo -e "\n     ${GREY}无效选项，取消操作...${NC}"; sleep 1; return ;; 
     esac
 
     # 只有在有效操作后才重启服务
     _manage_service "restart"
 }
-
 _quick_deploy() {
     _init_server_ip
     local p1=$(shuf -i 10000-60000 -n 1); local p2=$(shuf -i 10000-60000 -n 1); while [ $p2 -eq $p1 ]; do p2=$(shuf -i 10000-60000 -n 1); done
