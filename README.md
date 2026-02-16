@@ -22,7 +22,7 @@
 自动识别系统环境并安装至 `/usr/local/bin/sb`：
 
 ```bash
-(curl -LfsS [https://raw.githubusercontent.com/Zzz-IT/-Singbox-Maker-Z/main/singbox.sh](https://raw.githubusercontent.com/Zzz-IT/-Singbox-Maker-Z/main/singbox.sh) -o /usr/local/bin/sb || wget -q [https://raw.githubusercontent.com/Zzz-IT/-Singbox-Maker-Z/main/singbox.sh](https://raw.githubusercontent.com/Zzz-IT/-Singbox-Maker-Z/main/singbox.sh) -O /usr/local/bin/sb) && chmod +x /usr/local/bin/sb && sb
+(curl -LfsS https://raw.githubusercontent.com/Zzz-IT/-Singbox-Maker-Z/main/singbox.sh -o /usr/local/bin/sb || wget -q https://raw.githubusercontent.com/Zzz-IT/-Singbox-Maker-Z/main/singbox.sh -O /usr/local/bin/sb) && chmod +x /usr/local/bin/sb && sb
 ```
 ### ⚡ 快速部署
 
@@ -72,5 +72,6 @@ sb -q
 ---
 
 <p align="center">Made with ❤️ by Zzz-IT</p>
+
 
 
