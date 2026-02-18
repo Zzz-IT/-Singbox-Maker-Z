@@ -186,23 +186,15 @@ _set_beijing_timezone() {
         fi
         cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
         echo "Asia/Shanghai" > /etc/timezone
-        _success "Alpine 时区已修正为北京时间"
-        return
     fi
 
     # 2. Debian/Ubuntu/CentOS (Systemd) 处理逻辑
     if command -v timedatectl &>/dev/null; then
-        # 使用标准 systemd 工具
         timedatectl set-timezone Asia/Shanghai
-        _success "Systemd 时区已修正为北京时间"
     else
-        # 3. 容器或精简环境的回退方案 (直接软链接)
-        
-        # [优化点]：如果本地找不到时区文件，尝试自动安装 tzdata
+        # 3. 容器或精简环境的回退方案
         if [ ! -f /usr/share/zoneinfo/Asia/Shanghai ]; then
             if command -v apt-get >/dev/null 2>&1; then
-                _info "未找到时区文件，正在尝试安装 tzdata..."
-                # 临时静默更新并安装
                 export DEBIAN_FRONTEND=noninteractive
                 apt-get update -qq >/dev/null 2>&1
                 apt-get install -y tzdata >/dev/null 2>&1
@@ -213,18 +205,23 @@ _set_beijing_timezone() {
             fi
         fi
 
-        # 再次检查文件是否存在并应用
         if [ -f /usr/share/zoneinfo/Asia/Shanghai ]; then
             rm -f /etc/localtime
             ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
             echo "Asia/Shanghai" > /etc/timezone
-            _success "强制修正时区文件为北京时间"
-        else
-            _warn "无法获取时区文件 (安装失败)，跳过时区设置。"
         fi
     fi
-}
+    
+    _success "时区已修正为北京时间"
 
+    # [关键修复] 修改时区后，必须重启 crond 服务，否则定时任务仍按 UTC 执行
+    _info "正在重启定时任务服务以应用时区..."
+    if [ -n "${INIT_SYSTEM:-}" ] && [ "$INIT_SYSTEM" == "systemd" ]; then
+        systemctl restart cron 2>/dev/null || systemctl restart crond 2>/dev/null
+    elif [ -n "${INIT_SYSTEM:-}" ] && [ "$INIT_SYSTEM" == "openrc" ]; then
+        rc-service crond restart 2>/dev/null
+    fi
+}
 _install_sing_box() {
     _info "正在安装 sing-box..."
     local arch=$(uname -m)
@@ -1278,23 +1275,25 @@ _scheduled_lifecycle_menu() {
     
     local start_key="scheduled_start"
     local stop_key="scheduled_stop"
-    local start_cron="bash ${SELF_SCRIPT_PATH} ${start_key}"
-    local stop_cron="bash ${SELF_SCRIPT_PATH} ${stop_key}"
+    # 使用完整路径，确保 Cron 能找到脚本
+    local script_cmd="bash ${SELF_SCRIPT_PATH}"
     
-    # --- 读取状态 (优化版) ---
-    # 强制只取最后一行匹配项，防止多行干扰
+    # --- 读取状态 ---
     local existing_start=$(crontab -l 2>/dev/null | grep "${start_key}" | tail -n 1)
     local existing_stop=$(crontab -l 2>/dev/null | grep "${stop_key}" | tail -n 1)
     
     if [ -n "$existing_start" ] && [ -n "$existing_stop" ]; then
-        # 提取 Crontab 中的 分钟($1) 和 小时($2)
         local s_m=$(echo "$existing_start" | awk '{print $1}')
         local s_h=$(echo "$existing_start" | awk '{print $2}')
         local e_m=$(echo "$existing_stop" | awk '{print $1}')
         local e_h=$(echo "$existing_stop" | awk '{print $2}')
         
-        # 显示当前状态
-        printf " 当前状态: ${GREEN}已启用${NC} (启动: %02d:%02d | 停止: %02d:%02d)\n" $((s_h)) $((s_m)) $((e_h)) $((e_m))
+        # 增加数字有效性检查，防止显示报错
+        if [[ "$s_h" =~ ^[0-9]+$ ]]; then
+            printf " 当前状态: ${GREEN}已启用${NC} (启动: %02d:%02d | 停止: %02d:%02d)\n" $((s_h)) $((s_m)) $((e_h)) $((e_m))
+        else
+            echo -e " 当前状态: ${YELLOW}配置异常 (文件格式无法解析)${NC}"
+        fi
     else
         echo -e " 当前状态: ${RED}未启用${NC}"
     fi
@@ -1309,18 +1308,20 @@ _scheduled_lifecycle_menu() {
         read -p "启动时间 (例如 08:30): " start_input
         read -p "停止时间 (例如 23:15): " stop_input
         
-        # [修复] 增强的时间格式校验正则
+        # [关键修复] 去除所有可能存在的空格
+        start_input=${start_input// /}
+        stop_input=${stop_input// /}
+
         if [[ ! "$start_input" =~ ^[0-9]{1,2}:[0-9]{1,2}$ ]] || \
            [[ ! "$stop_input" =~ ^[0-9]{1,2}:[0-9]{1,2}$ ]]; then
             _error "时间格式错误! 请严格使用 HH:MM (例如 08:30)"
             return
         fi
 
-        # [修复] 使用 IFS 安全分割时间，自动去除多余空格
         IFS=':' read -r s_h s_m <<< "$start_input"
         IFS=':' read -r e_h e_m <<< "$stop_input"
         
-        # 转为十进制避免 08 被识别为八进制
+        # 转为十进制
         s_h=$((10#$s_h)); s_m=$((10#$s_m))
         e_h=$((10#$e_h)); e_m=$((10#$e_m))
 
@@ -1331,18 +1332,21 @@ _scheduled_lifecycle_menu() {
         
         _info "正在更新定时任务..."
         
-        # --- 原子写入逻辑 ---
-        # 1. 过滤掉旧任务
+        # 写入 Crontab
         crontab -l 2>/dev/null | grep -v "${start_key}" | grep -v "${stop_key}" > /tmp/cron.tmp
         
-        # 2. 写入新任务 (注意变量名不要写错)
-        echo "$s_m $s_h * * * $start_cron >> $LOG_FILE 2>&1" >> /tmp/cron.tmp
-        echo "$e_m $e_h * * * $stop_cron >> $LOG_FILE 2>&1" >> /tmp/cron.tmp
+        # [优化] 在 Cron 命令中显式导入 PATH，防止找不到 systemctl
+        local cron_prefix="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
         
-        # 3. 应用 Crontab
+        echo "$s_m $s_h * * * $cron_prefix $script_cmd $start_key >> $LOG_FILE 2>&1" >> /tmp/cron.tmp
+        echo "$e_m $e_h * * * $cron_prefix $script_cmd $stop_key >> $LOG_FILE 2>&1" >> /tmp/cron.tmp
+        
         if crontab /tmp/cron.tmp; then
             rm -f /tmp/cron.tmp
-            # 再次确认显示给用户看
+            # 尝试重启 Cron 确保立即生效
+            if [ "$INIT_SYSTEM" == "systemd" ]; then systemctl restart cron 2>/dev/null || systemctl restart crond 2>/dev/null; fi
+            if [ "$INIT_SYSTEM" == "openrc" ]; then rc-service crond restart 2>/dev/null; fi
+            
             _success "定时计划已设置：启动 ${s_h}:${s_m} | 停止 ${e_h}:${e_m}"
         else
             rm -f /tmp/cron.tmp
