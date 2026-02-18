@@ -755,7 +755,7 @@ WantedBy=multi-user.target
 EOF
 }
 _create_openrc_service() {
-    # [修复] 动态查找 bash 路径，与 Systemd 逻辑保持一致
+    # 动态查找 bash 路径
     local bash_path=$(command -v bash || echo "/bin/bash")
 
     touch "${LOG_FILE}"
@@ -774,15 +774,17 @@ error_log="${LOG_FILE}"
 depend() { 
     need net
     after firewall
+    # 建议加上 dns，确保域名解析可用
+    use dns logger
 }
 
 start_pre() { 
     export GOMEMLIMIT="$(_get_mem_limit)MiB"
 }
 
-# [修复] 使用绝对路径调用 bash，确保 OpenRC 能找到解释器
 start_post() {
-    ${bash_path} "${SELF_SCRIPT_PATH}" keepalive >/dev/null 2>&1 &
+
+    ( sleep 10; ${bash_path} "${SELF_SCRIPT_PATH}" keepalive >> "${LOG_FILE}" 2>&1 ) &
 }
 EOF
     chmod +x "$SERVICE_FILE"
