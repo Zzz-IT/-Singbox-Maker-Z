@@ -1229,42 +1229,46 @@ _quick_deploy() {
 
 # --- 定时启停功能 ---
 _do_scheduled_start() {
-    _info "执行定时启动任务..." >> "$LOG_FILE"
-    
-    # 尝试启动
-    if _manage_service "start"; then
-        _info "服务启动指令已发送。" >> "$LOG_FILE"
-    else
-        _error "服务启动失败 (可能是 INIT_SYSTEM 检测错误)" >> "$LOG_FILE"
-    fi
+    # [技巧] 块级重定向：将整个代码块的输出(含报错)全量写入日志
+    {
+        echo "$(date): [Cron] 执行定时启动任务..."
+        
+        # [代码复用] 直接调用 lib/service.sh 的标准函数
+        # 它的输出会被外层的 >> $LOG_FILE 捕获
+        _manage_service "start"
 
-    # 恢复 Argo 守护
-    if [ -f "$ARGO_METADATA_FILE" ] && [ "$(jq 'length' "$ARGO_METADATA_FILE")" -gt 0 ]; then
-        _enable_argo_watchdog
-        # 延迟 5 秒再拉起 Argo，等待 Sing-box 网络就绪
-        sleep 5 
-        _argo_keepalive 
-    fi
+        # 恢复 Argo 守护
+        if [ -f "$ARGO_METADATA_FILE" ] && [ "$(jq 'length' "$ARGO_METADATA_FILE")" -gt 0 ]; then
+            _enable_argo_watchdog
+            sleep 5 
+            _argo_keepalive 
+        fi
+        
+        echo "$(date): [Cron] 启动流程结束"
+    } >> "$LOG_FILE" 2>&1
 }
 
 _do_scheduled_stop() {
-     _info "执行定时停止任务..." >> "$LOG_FILE"
-     
-     # [优化] 1. 先关守护，防止自愈
-     _disable_argo_watchdog
-     
-     # [新增] 2. 再次确认 Crontab 是否干净 (防止上一步因权限或路径失败)
-     local j="keepalive"
-     if crontab -l 2>/dev/null | grep -q "$j"; then
-         # 如果还在，强制再删一次
-         crontab -l 2>/dev/null | grep -Fv "$j" | crontab -
-     fi
+     {
+         echo "$(date): [Cron] 执行定时停止任务..."
+         
+         # 1. 先关守护
+         _disable_argo_watchdog
+         
+         # 2. 再次确认 Crontab 清理
+         local j="keepalive"
+         if crontab -l 2>/dev/null | grep -q "$j"; then
+             crontab -l 2>/dev/null | grep -Fv "$j" | crontab -
+         fi
 
-     # 3. 停止所有隧道
-     _stop_all_argo_tunnels
-     
-     # 4. 停止主服务
-     _manage_service "stop"
+         # 3. 停止所有 Argo 隧道
+         _stop_all_argo_tunnels
+         
+         # 4. [代码复用] 停止主服务
+         _manage_service "stop"
+         
+         echo "$(date): [Cron] 停止流程结束"
+     } >> "$LOG_FILE" 2>&1
 }
 
 _scheduled_lifecycle_menu() {
@@ -1470,12 +1474,18 @@ _main_menu() {
     done
 }
 
-# --- [新增] 运行时环境初始化 (提取出来给 Cron 使用) ---
+# --- [优化] 运行时环境初始化 (复用库函数) ---
 _init_runtime() {
+    # 1. 权限检查 (复用 utils.sh 中的 _check_root)
     _check_root
-    _detect_init_system
 
-    # [逻辑移动到这里] 确定服务文件路径
+    # 2. 系统检测 (核心代码复用！)
+    # 直接调用 lib/system.sh 里的函数，而不是在这里重写一遍
+    if [ -z "${INIT_SYSTEM:-}" ]; then
+        _detect_init_system
+    fi
+    
+    # 3. 确定服务文件路径
     if [ "$INIT_SYSTEM" == "openrc" ]; then
         SERVICE_FILE="/etc/init.d/sing-box"
     else
