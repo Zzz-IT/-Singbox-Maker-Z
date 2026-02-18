@@ -194,14 +194,31 @@ _set_beijing_timezone() {
         timedatectl set-timezone Asia/Shanghai
         _success "Systemd 时区已修正为北京时间"
     else
-        # 容器或精简环境的回退方案 (直接软链接)
+        # 3. 容器或精简环境的回退方案 (直接软链接)
+        
+        # [优化点]：如果本地找不到时区文件，尝试自动安装 tzdata
+        if [ ! -f /usr/share/zoneinfo/Asia/Shanghai ]; then
+            if command -v apt-get >/dev/null 2>&1; then
+                _info "未找到时区文件，正在尝试安装 tzdata..."
+                # 临时静默更新并安装
+                export DEBIAN_FRONTEND=noninteractive
+                apt-get update -qq >/dev/null 2>&1
+                apt-get install -y tzdata >/dev/null 2>&1
+            elif command -v yum >/dev/null 2>&1; then
+                 yum install -y tzdata >/dev/null 2>&1
+            elif command -v dnf >/dev/null 2>&1; then
+                 dnf install -y tzdata >/dev/null 2>&1
+            fi
+        fi
+
+        # 再次检查文件是否存在并应用
         if [ -f /usr/share/zoneinfo/Asia/Shanghai ]; then
             rm -f /etc/localtime
             ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
             echo "Asia/Shanghai" > /etc/timezone
             _success "强制修正时区文件为北京时间"
         else
-            _warn "未找到时区文件，跳过设置。"
+            _warn "无法获取时区文件 (安装失败)，跳过时区设置。"
         fi
     fi
 }
