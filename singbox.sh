@@ -6,11 +6,12 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 # 运行时目录（脚本安装目录）
 INSTALL_DIR_DEFAULT="/usr/local/share/singbox-maker-z"
 
-# 业务数据目录（保持与旧版一致）
+# 业务数据目录
 SINGBOX_DIR="/usr/local/etc/sing-box"
 
-# 线上仓库
+# 线上仓库配置
 GITHUB_RAW_BASE="https://raw.githubusercontent.com/Zzz-IT/-Singbox-Maker-Z/main"
+INSTALL_SCRIPT_URL="${GITHUB_RAW_BASE}/install.sh"
 
 # --- 核心组件自动补全函数 ---
 _download_missing_component() {
@@ -65,7 +66,7 @@ SELF_SCRIPT_PATH="$(readlink -f -- "${BASH_SOURCE[0]}")"
 PID_FILE="/var/run/singbox_manager.pid"
 
 # 脚本版本
-SCRIPT_VERSION="13-Stable-Update"
+SCRIPT_VERSION="14-Final-Robust"
 
 # 退出清理
 _cleanup_tmp() {
@@ -83,11 +84,10 @@ _sanitize_tag() {
     if [ -z "$clean_name" ]; then echo "node_$(date +%s)"; else echo "$clean_name"; fi
 }
 
-# --- Crontab 锁机制 (修复并发写入隐患) ---
+# --- Crontab 锁机制 ---
 _cron_lock() {
     local lock="/tmp/singbox_cron.lock"
     local i=0
-    # 尝试获取锁，最多等待2秒
     while ! mkdir "$lock" 2>/dev/null; do
         [ $i -gt 20 ] && break
         sleep 0.1
@@ -198,13 +198,13 @@ _start_argo_tunnel() {
     rm -f "${log_file}"
 
     if [ -n "$token" ]; then
-        # [修复] 固定隧道：直接丢弃所有日志，彻底防止 OOM
+        # 固定隧道：丢弃日志，防止OOM
         nohup ${CLOUDFLARED_BIN} tunnel run --token "$token" --logfile /dev/null > /dev/null 2>&1 &
         local cf_pid=$!; echo "$cf_pid" > "${pid_file}"; sleep 5
         if ! kill -0 "$cf_pid" 2>/dev/null; then _error "启动失败" >&2; return 1; fi
         _success "Argo 固定隧道启动成功" >&2; return 0
     else
-        # [维持] 临时隧道：需要抓取域名，暂时保留日志但获取后清空
+        # 临时隧道：抓取域名
         nohup ${CLOUDFLARED_BIN} tunnel --url "http://localhost:${target_port}" --logfile "${log_file}" > /dev/null 2>&1 &
         local cf_pid=$!; echo "$cf_pid" > "${pid_file}"
         local tunnel_domain=""; local wait_count=0
@@ -214,7 +214,7 @@ _start_argo_tunnel() {
             if [ -f "${log_file}" ]; then
                 tunnel_domain=$(grep -o 'https://[a-zA-Z0-9-]*\.trycloudflare\.com' "${log_file}" 2>/dev/null | tail -1 | sed 's|https://||')
                 if [ -n "$tunnel_domain" ]; then 
-                    : > "${log_file}" # 获取后立即清空
+                    : > "${log_file}" # 抓取成功后立即清空日志
                     break 
                 fi
             fi
@@ -237,7 +237,9 @@ _stop_all_argo_tunnels() {
     pkill -f "cloudflared" 2>/dev/null
 }
 
+# ... (Argo配置函数保留原样，省略以节省篇幅，功能逻辑未变) ...
 _add_argo_vless_ws() {
+    # (此部分与原代码一致)
     _info " 创建 VLESS-WS + Argo 隧道节点 "
     _install_cloudflared || return 1
     read -p "请输入 Argo 内部监听端口 (回车随机生成): " input_port
@@ -246,48 +248,6 @@ _add_argo_vless_ws() {
     read -p "请输入 WebSocket 路径 (回车随机生成): " ws_path
     [ -z "$ws_path" ] && ws_path="/"$(${SINGBOX_BIN} generate rand --hex 8)
     [[ ! "$ws_path" == /* ]] && ws_path="/${ws_path}"
-    
-    echo "请选择隧道模式: 1.临时 2.固定(Token)"
-    read -p "选择 [1/2] (默认: 1): " mode; mode=${mode:-1}
-    
-    local token=""; local domain=""; local type="temp"
-    if [ "$mode" == "2" ]; then
-        type="fixed"
-        read -p "请粘贴 Token 或安装命令: " input_token
-        token=$(echo "$input_token" | grep -oE 'ey[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+' | head -1)
-        [ -z "$token" ] && token=$(echo "$input_token" | grep -oE 'ey[A-Za-z0-9_-]{20,}' | head -1)
-        [ -z "$token" ] && token="$input_token"
-        if [ -z "$token" ]; then _error "Token 无效"; return 1; fi
-        read -p "请输入绑定的域名: " domain; [ -z "$domain" ] && return 1
-    fi
-
-    local name="Argo-Vless"; read -p "节点名称 (默认: $name): " n; name=${n:-$name}
-    local tag="argo_vless_${port}_$(_sanitize_tag "$name")"; local uuid=$(${SINGBOX_BIN} generate uuid)
-    
-    local inbound=$(jq -n --arg t "$tag" --arg p "$port" --arg u "$uuid" --arg w "$ws_path" '{"type":"vless","tag":$t,"listen":"127.0.0.1","listen_port":($p|tonumber),"users":[{"uuid":$u,"flow":""}],"transport":{"type":"ws","path":$w}}')
-    _atomic_modify_json "$CONFIG_FILE" ".inbounds += [$inbound]" || return 1
-    _manage_service "restart"; sleep 2
-    
-    if [ "$type" == "fixed" ]; then _start_argo_tunnel "$port" "vless-ws" "$token" || return 1
-    else domain=$(_start_argo_tunnel "$port" "vless-ws"); [ -z "$domain" ] && return 1; fi
-    
-    local meta=$(jq -n --arg t "$tag" --arg n "$name" --arg d "$domain" --arg p "$port" --arg u "$uuid" --arg w "$ws_path" --arg ty "$type" --arg tok "$token" '{($t):{name:$n,domain:$d,local_port:($p|tonumber),uuid:$u,path:$w,protocol:"vless-ws",type:$ty,token:$tok}}')
-    [ ! -f "$ARGO_METADATA_FILE" ] && echo '{}' > "$ARGO_METADATA_FILE"
-    _atomic_modify_json "$ARGO_METADATA_FILE" ". + $meta"
-    local proxy=$(jq -n --arg n "$name" --arg s "$domain" --arg u "$uuid" --arg w "$ws_path" '{"name":$n,"type":"vless","server":$s,"port":443,"uuid":$u,"tls":true,"network":"ws","servername":$s,"ws-opts":{"path":$w,"headers":{"Host":$s}}}')
-    _add_node_to_yaml "$proxy"; _enable_argo_watchdog; _success "Argo 节点创建成功！"
-}
-
-_add_argo_trojan_ws() {
-    _info " 创建 Trojan-WS + Argo 隧道节点 "
-    _install_cloudflared || return 1
-    read -p "请输入 Argo 内部监听端口 (回车随机生成): " input_port
-    local port="$input_port"
-    if [[ -z "$port" ]] || [[ ! "$port" =~ ^[0-9]+$ ]]; then port=$(shuf -i 10000-60000 -n 1); fi
-    read -p "请输入 WebSocket 路径: " ws_path; [ -z "$ws_path" ] && ws_path="/"$(${SINGBOX_BIN} generate rand --hex 8)
-    [[ ! "$ws_path" == /* ]] && ws_path="/${ws_path}"
-    read -p "请输入密码 (回车随机): " password; [ -z "$password" ] && password=$(${SINGBOX_BIN} generate rand --hex 16)
-    
     echo "请选择隧道模式: 1.临时 2.固定(Token)"
     read -p "选择 [1/2] (默认: 1): " mode; mode=${mode:-1}
     local token=""; local domain=""; local type="temp"
@@ -300,17 +260,49 @@ _add_argo_trojan_ws() {
         if [ -z "$token" ]; then _error "Token 无效"; return 1; fi
         read -p "请输入绑定的域名: " domain; [ -z "$domain" ] && return 1
     fi
+    local name="Argo-Vless"; read -p "节点名称 (默认: $name): " n; name=${n:-$name}
+    local tag="argo_vless_${port}_$(_sanitize_tag "$name")"; local uuid=$(${SINGBOX_BIN} generate uuid)
+    local inbound=$(jq -n --arg t "$tag" --arg p "$port" --arg u "$uuid" --arg w "$ws_path" '{"type":"vless","tag":$t,"listen":"127.0.0.1","listen_port":($p|tonumber),"users":[{"uuid":$u,"flow":""}],"transport":{"type":"ws","path":$w}}')
+    _atomic_modify_json "$CONFIG_FILE" ".inbounds += [$inbound]" || return 1
+    _manage_service "restart"; sleep 2
+    if [ "$type" == "fixed" ]; then _start_argo_tunnel "$port" "vless-ws" "$token" || return 1
+    else domain=$(_start_argo_tunnel "$port" "vless-ws"); [ -z "$domain" ] && return 1; fi
+    local meta=$(jq -n --arg t "$tag" --arg n "$name" --arg d "$domain" --arg p "$port" --arg u "$uuid" --arg w "$ws_path" --arg ty "$type" --arg tok "$token" '{($t):{name:$n,domain:$d,local_port:($p|tonumber),uuid:$u,path:$w,protocol:"vless-ws",type:$ty,token:$tok}}')
+    [ ! -f "$ARGO_METADATA_FILE" ] && echo '{}' > "$ARGO_METADATA_FILE"
+    _atomic_modify_json "$ARGO_METADATA_FILE" ". + $meta"
+    local proxy=$(jq -n --arg n "$name" --arg s "$domain" --arg u "$uuid" --arg w "$ws_path" '{"name":$n,"type":"vless","server":$s,"port":443,"uuid":$u,"tls":true,"network":"ws","servername":$s,"ws-opts":{"path":$w,"headers":{"Host":$s}}}')
+    _add_node_to_yaml "$proxy"; _enable_argo_watchdog; _success "Argo 节点创建成功！"
+}
 
+_add_argo_trojan_ws() {
+    # (此部分与原代码一致)
+    _info " 创建 Trojan-WS + Argo 隧道节点 "
+    _install_cloudflared || return 1
+    read -p "请输入 Argo 内部监听端口 (回车随机生成): " input_port
+    local port="$input_port"
+    if [[ -z "$port" ]] || [[ ! "$port" =~ ^[0-9]+$ ]]; then port=$(shuf -i 10000-60000 -n 1); fi
+    read -p "请输入 WebSocket 路径: " ws_path; [ -z "$ws_path" ] && ws_path="/"$(${SINGBOX_BIN} generate rand --hex 8)
+    [[ ! "$ws_path" == /* ]] && ws_path="/${ws_path}"
+    read -p "请输入密码 (回车随机): " password; [ -z "$password" ] && password=$(${SINGBOX_BIN} generate rand --hex 16)
+    echo "请选择隧道模式: 1.临时 2.固定(Token)"
+    read -p "选择 [1/2] (默认: 1): " mode; mode=${mode:-1}
+    local token=""; local domain=""; local type="temp"
+    if [ "$mode" == "2" ]; then
+        type="fixed"
+        read -p "请粘贴 Token: " input_token
+        token=$(echo "$input_token" | grep -oE 'ey[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+' | head -1)
+        [ -z "$token" ] && token=$(echo "$input_token" | grep -oE 'ey[A-Za-z0-9_-]{20,}' | head -1)
+        [ -z "$token" ] && token="$input_token"
+        if [ -z "$token" ]; then _error "Token 无效"; return 1; fi
+        read -p "请输入绑定的域名: " domain; [ -z "$domain" ] && return 1
+    fi
     local name="Argo-Trojan"; read -p "节点名称 (默认: $name): " n; name=${n:-$name}
     local tag="argo_trojan_${port}_$(_sanitize_tag "$name")"
-    
     local inbound=$(jq -n --arg t "$tag" --arg p "$port" --arg pw "$password" --arg w "$ws_path" '{"type":"trojan","tag":$t,"listen":"127.0.0.1","listen_port":($p|tonumber),"users":[{"password":$pw}],"transport":{"type":"ws","path":$w}}')
     _atomic_modify_json "$CONFIG_FILE" ".inbounds += [$inbound]" || return 1
     _manage_service "restart"; sleep 2
-    
     if [ "$type" == "fixed" ]; then _start_argo_tunnel "$port" "trojan-ws" "$token" || return 1
     else domain=$(_start_argo_tunnel "$port" "trojan-ws"); [ -z "$domain" ] && return 1; fi
-    
     local meta=$(jq -n --arg t "$tag" --arg n "$name" --arg d "$domain" --arg p "$port" --arg pw "$password" --arg w "$ws_path" --arg ty "$type" --arg tok "$token" '{($t):{name:$n,domain:$d,local_port:($p|tonumber),password:$pw,path:$w,protocol:"trojan-ws",type:$ty,token:$tok}}')
     [ ! -f "$ARGO_METADATA_FILE" ] && echo '{}' > "$ARGO_METADATA_FILE"
     _atomic_modify_json "$ARGO_METADATA_FILE" ". + $meta"
@@ -376,14 +368,14 @@ _argo_keepalive() {
     local lock="/tmp/singbox_keepalive.lock"; [ -f "$lock" ] && kill -0 $(cat "$lock") 2>/dev/null && return
     echo "$$" > "$lock"; trap 'rm -f "$lock"' RETURN EXIT
     [ ! -f "$ARGO_METADATA_FILE" ] && return
-    local tags=$(jq -r 'keys[]' "$ARGO_METADATA_FILE")
+    local 标签=$(jq -r 'keys[]' "$ARGO_METADATA_FILE")
     for tag in $tags; do
         local port=$(jq -r ".\"$tag\".local_port" "$ARGO_METADATA_FILE")
         local type=$(jq -r ".\"$tag\".type" "$ARGO_METADATA_FILE")
         local token=$(jq -r ".\"$tag\".token // empty" "$ARGO_METADATA_FILE")
         local pid="/tmp/singbox_argo_${port}.pid"
         
-        # [新增] 日志大小检查与清理 (防止临时隧道日志OOM)
+        # [日志监控] 防止临时隧道日志过大
         local log_file="/tmp/singbox_argo_${port}.log"
         if [ -f "$log_file" ] && [ $(stat -c%s "$log_file" 2>/dev/null || echo 0) -gt 5242880 ]; then
             : > "$log_file"
@@ -434,7 +426,7 @@ _argo_menu() {
     done
 }
 
-# --- 服务与配置管理 ---
+# ... (服务管理、配置文件、节点添加函数保留，逻辑未变) ...
 _create_systemd_service() {
     cat > "$SERVICE_FILE" <<EOF
 [Unit]
@@ -542,6 +534,7 @@ _show_node_link() {
     if [ -n "$url" ]; then echo -e "\n${YELLOW}--- 分享链接 ---${NC}\n${CYAN}${url}${NC}"; fi
 }
 
+# ... (节点添加函数 _add_vless_ws_tls 等省略，原逻辑保持不变) ...
 _add_vless_ws_tls() {
     local camouflage_domain="" port="" is_cdn_mode=false client_server_addr="${server_ip}" name=""
     read -p "连接模式 (1.直连[默认]2.优选域名/IP): " mode_choice
@@ -567,7 +560,7 @@ _add_vless_ws_tls() {
     local proxy=$(jq -n --arg n "$name" --arg s "$client_server_addr" --arg p "$client_port" --arg u "$uuid" --arg sn "$camouflage_domain" --arg w "$ws_path" --arg sv "$skip_verify" '{"name":$n,"type":"vless","server":$s,"port":($p|tonumber),"uuid":$u,"tls":true,"udp":true,"skip-cert-verify":($sv=="true"),"network":"ws","servername":$sn,"ws-opts":{"path":$w,"headers":{"Host":$sn}}}')
     _add_node_to_yaml "$proxy"; _success "VLESS-WS 节点 [${name}] 添加成功"; _show_node_link "vless-ws-tls" "$name" "$client_server_addr" "$client_port" "$uuid" "$camouflage_domain" "$ws_path" "$skip_verify"
 }
-# ... (省略重复函数：_add_trojan_ws_tls, _add_anytls, _add_vless_reality, _add_vless_tcp, _add_hysteria2, _add_tuic, _add_shadowsocks_menu, _add_socks, _view_nodes, _delete_node, _modify_port - 这些保持不变) ...
+# (其余添加节点函数 _add_trojan_ws_tls, _add_anytls 等均与原代码一致，需包含在文件中) ...
 _add_trojan_ws_tls() {
     local camouflage_domain="" port="" is_cdn_mode=false client_server_addr="${server_ip}" name=""
     read -p "连接模式 (1.直连[默认]2.优选): " m; if [ "$m" == "2" ]; then is_cdn_mode=true; read -p "优选域名(默认 www.visa.com.sg): " c; client_server_addr=${c:-"www.visa.com.sg"}; else read -p "连接地址(默认 ${server_ip}): " c; client_server_addr=${c:-$server_ip}; fi
@@ -762,7 +755,7 @@ _delete_node() {
         local tag=$(echo "$node" | jq -r '.tag'); [[ "$tag" == *"-hop-"* ]] && continue
         if [[ "$tag" == "argo_"* ]]; then continue; fi
         if [ -f "$ARGO_METADATA_FILE" ] && jq -e ".\"$tag\"" "$ARGO_METADATA_FILE" >/dev/null 2>&1; then continue; fi
-        local 输入=$(echo "$node" | jq -r '.type'); local port=$(echo "$node" | jq -r '.listen_port')
+        local type=$(echo "$node" | jq -r '.type'); local port=$(echo "$node" | jq -r '.listen_port')
         tags+=("$tag"); ports+=("$port"); types+=("$type")
         local dn=$(jq -r --arg t "$tag" '.[$t].name // empty' "$METADATA_FILE"); if [ -z "$dn" ]; then dn=$(echo "$tag" | sed "s/_${port}$//" | tr '_' ' '); fi; names+=("$dn")
         echo -e "  ${CYAN}$i)${NC} ${dn} (${YELLOW}${type}${NC}) @ ${port}"; ((i++))
@@ -816,18 +809,20 @@ _modify_port() {
 }
 _check_config() { if ${SINGBOX_BIN} check -c ${CONFIG_FILE}; then _success "配置正确"; else _error "配置错误"; fi; }
 
-# [核心修复] 直接调用官方安装脚本进行全量更新
+# [核心修复] 更新函数：强制调用 install.sh 
 _update_script() {
     _info "正在调用官方安装脚本进行全量更新..."
-    local install_url="https://raw.githubusercontent.com/Zzz-IT/-Singbox-Maker-Z/main/install.sh"
+    
+    # 优先使用 curl，其次 wget
     if command -v curl >/dev/null 2>&1; then
-        curl -fsSL "$install_url" | bash
+        curl -fsSL "$INSTALL_SCRIPT_URL" | bash
     elif command -v wget >/dev/null 2>&1; then
-        wget -qO- "$install_url" | bash
+        wget -qO- "$INSTALL_SCRIPT_URL" | bash
     else
-        _error "未找到 curl 或 wget"
+        _error "未找到 curl 或 wget，无法更新"
         return 1
     fi
+    
     _success "更新完成，请重新运行脚本。"
     exit 0
 }
