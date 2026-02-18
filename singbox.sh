@@ -1470,33 +1470,35 @@ _main_menu() {
     done
 }
 
-main() {
+# --- [新增] 运行时环境初始化 (提取出来给 Cron 使用) ---
+_init_runtime() {
     _check_root
     _detect_init_system
 
+    # [逻辑移动到这里] 确定服务文件路径
+    if [ "$INIT_SYSTEM" == "openrc" ]; then
+        SERVICE_FILE="/etc/init.d/sing-box"
+    else
+        SERVICE_FILE="/etc/systemd/system/sing-box.service"
+    fi
+}
+
+# --- [修改] 主函数现在变得更简洁 ---
+main() {
     # 完整性自检：避免半更新导致缺组件
     if [[ ! -f "${INSTALL_DIR_DEFAULT}/utils.sh" || ! -d "${INSTALL_DIR_DEFAULT}/lib" ]]; then
         _info "检测到安装组件不完整，正在尝试修复..."
         _update_script
     fi
 
-    # [新增] 只有检测完系统后，才能确定服务文件路径
-    if [ "$INIT_SYSTEM" == "openrc" ]; then
-        SERVICE_FILE="/etc/init.d/sing-box"
-    else
-        SERVICE_FILE="/etc/systemd/system/sing-box.service"
-    fi
-    
     # --- [额外补充] 日志自动清理逻辑 ---
-    # 如果日志文件存在且大于 10MB，则清空它
     [ -f "${LOG_FILE}" ] && [ $(stat -c%s "${LOG_FILE}") -gt 10485760 ] && : > "${LOG_FILE}"
-    # ------------------------------------
-
     
     _set_beijing_timezone
     
     mkdir -p "${SINGBOX_DIR}" 2>/dev/null
     _install_dependencies; _init_server_ip
+    
     local first=false
     if [ ! -f "${SINGBOX_BIN}" ]; then _install_sing_box; first=true; fi
     if [ ! -f "${CONFIG_FILE}" ]; then _initialize_config_files; fi
@@ -1505,6 +1507,9 @@ main() {
     if [ "$QUICK_DEPLOY_MODE" = true ]; then _quick_deploy; exit 0; fi
     _main_menu
 }
+
+# [关键修复] 在处理任何参数前，必须先初始化系统环境(获取 INIT_SYSTEM)
+_init_runtime
 
 # 参数监听修改，增加 scheduled_start 和 scheduled_stop
 while [[ $# -gt 0 ]]; do 
