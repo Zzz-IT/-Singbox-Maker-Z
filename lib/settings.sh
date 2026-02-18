@@ -1,0 +1,192 @@
+#!/usr/bin/env bash
+
+# lib/settings.sh
+# - 负责高级设置功能：日志、DNS、路由策略
+# - 被 utils.sh 加载，依赖全局变量 $CONFIG_FILE
+
+# --- 辅助函数：获取当前状态 ---
+
+_get_current_log_level() {
+    [ ! -f "$CONFIG_FILE" ] && echo "未知" && return
+    jq -r '.log.level // "error"' "$CONFIG_FILE"
+}
+
+_get_current_dns_group() {
+    [ ! -f "$CONFIG_FILE" ] && echo "未知" && return
+    # 通过判断是否存在 bootstrap-cn 标签来区分
+    if jq -e '.dns.servers[] | select(.tag == "bootstrap-cn")' "$CONFIG_FILE" >/dev/null 2>&1; then
+        echo "国内优先"
+    else
+        echo "国外优先"
+    fi
+}
+
+_get_current_strategy() {
+    [ ! -f "$CONFIG_FILE" ] && echo "未知" && return
+    # 提取 action=resolve 的 strategy，默认为 prefer_ipv6
+    local s=$(jq -r '.route.rules[]? | select(.action == "resolve")? | .strategy // empty' "$CONFIG_FILE" | head -1)
+    [ -z "$s" ] && s="prefer_ipv6"
+    echo "$s"
+}
+
+# --- 功能函数 ---
+
+# 1. 日志设置
+_setting_log() {
+    local current=$(_get_current_log_level)
+    echo -e " ${CYAN}   日志配置 (Log Settings)  ${NC}"
+    echo -e " ${YELLOW}当前状态: ${current}${NC}"
+    echo -e ""
+    echo -e "  ${WHITE}1.${NC} Error (仅错误 - 推荐/默认)"
+    echo -e "  ${WHITE}2.${NC} Warn  (警告)"
+    echo -e "  ${WHITE}3.${NC} Info  (信息 - 调试用)"
+    echo -e "  ${WHITE}4.${NC} Debug (调试 - 极量日志)"
+    echo -e ""
+    read -p "请选择日志等级 [1-4] (回车取消): " level_c
+    [ -z "$level_c" ] && return
+
+    local level="error"
+    case $level_c in
+        2) level="warn" ;;
+        3) level="info" ;;
+        4) level="debug" ;;
+        *) level="error" ;;
+    esac
+
+    local log_json=$(jq -n --arg l "$level" '{"level": $l, "timestamp": false}')
+    _atomic_modify_json "$CONFIG_FILE" ".log = $log_json"
+    _success "日志等级已更新为: $level"
+    
+    read -p "需要重启服务生效，立即重启? (y/N): " r
+    [[ "$r" == "y" ]] && _manage_service "restart"
+}
+
+# 2. DNS 设置
+_setting_dns() {
+    local current=$(_get_current_dns_group)
+    echo -e " ${CYAN}   DNS 策略配置 (DNS Settings)  ${NC}"
+    echo -e " ${YELLOW}当前状态: ${current}${NC}"
+    echo -e ""
+    echo -e "  ${WHITE}1.${NC} 国外优先 (Cloudflare/Google/Quad9) - ${YELLOW}推荐${NC}"
+    echo -e "     ${GREY}适合: 境外 VPS，能够访问国际互联网的环境${NC}"
+    echo -e "  ${WHITE}2.${NC} 国内优先 (AliDNS/DNSPod)"
+    echo -e "     ${GREY}适合: 国内中转机，或连接受限的环境${NC}"
+    echo -e ""
+    read -p "请选择 DNS 组 [1-2] (回车取消): " dns_c
+    [ -z "$dns_c" ] && return
+
+    local dns_json=""
+    if [ "$dns_c" == "2" ]; then
+        # 国内组
+        dns_json='{
+            "servers": [
+                {"type": "udp", "tag": "bootstrap-cn", "server": "223.5.5.5", "server_port": 53},
+                {"type": "https", "tag": "dns", "server": "dns.alidns.com", "path": "/dns-query", "domain_resolver": "bootstrap-cn"},
+                {"type": "https", "tag": "doh-tencent", "server": "doh.pub", "path": "/dns-query", "domain_resolver": "bootstrap-cn"}
+            ]
+        }'
+        _info "已选择: 国内 DNS 组"
+    else
+        # 国外组
+        dns_json='{
+            "servers": [
+                {"type": "udp", "tag": "bootstrap-v4", "server": "1.1.1.1", "server_port": 53},
+                {"type": "https", "tag": "dns", "server": "cloudflare-dns.com", "path": "/dns-query", "domain_resolver": "bootstrap-v4"},
+                {"type": "https", "tag": "doh-google", "server": "dns.google", "path": "/dns-query", "domain_resolver": "bootstrap-v4"},
+                {"type": "https", "tag": "doh-quad9", "server": "dns.quad9.net", "path": "/dns-query", "domain_resolver": "bootstrap-v4"}
+            ]
+        }'
+        _info "已选择: 国外 DNS 组"
+    fi
+
+    _atomic_modify_json "$CONFIG_FILE" ".dns = $dns_json"
+    if ! jq -e '.route' "$CONFIG_FILE" >/dev/null 2>&1; then
+         _atomic_modify_json "$CONFIG_FILE" '.route = {"final": "direct", "auto_detect_interface": true}'
+    fi
+    _atomic_modify_json "$CONFIG_FILE" '.route.default_domain_resolver = "dns"'
+
+    _success "DNS 配置已更新"
+    read -p "需要重启服务生效，立即重启? (y/N): " r
+    [[ "$r" == "y" ]] && _manage_service "restart"
+}
+
+# 3. 出站/路由策略设置
+_setting_strategy() {
+    local current=$(_get_current_strategy)
+    echo -e " ${CYAN}   IP 优选策略 (IP Strategy)  ${NC}"
+    echo -e " ${YELLOW}当前状态: ${current}${NC}"
+    echo -e ""
+    echo -e "  ${WHITE}1.${NC} 优先 IPv6 (prefer_ipv6) - ${YELLOW}默认${NC}"
+    echo -e "  ${WHITE}2.${NC} 优先 IPv4 (prefer_ipv4)"
+    echo -e "  ${WHITE}3.${NC} 仅 IPv4   (ipv4_only)"
+    echo -e "  ${WHITE}4.${NC} 仅 IPv6   (ipv6_only)"
+    echo -e ""
+    read -p "请选择策略 [1-4] (回车取消): " s_c
+    [ -z "$s_c" ] && return
+
+    local strategy="prefer_ipv6"
+    case $s_c in
+        2) strategy="prefer_ipv4" ;;
+        3) strategy="ipv4_only" ;;
+        4) strategy="ipv6_only" ;;
+        *) strategy="prefer_ipv6" ;;
+    esac
+
+    local route_json=$(jq -n --arg s "$strategy" '{
+        "default_domain_resolver": "dns",
+        "rules": [
+            {
+                "action": "resolve",
+                "strategy": $s,
+                "disable_cache": false
+            }
+        ],
+        "final": "direct"
+    }')
+
+    _atomic_modify_json "$CONFIG_FILE" ".route = $route_json"
+    _success "出站策略已更新为: $strategy"
+    
+    read -p "需要重启服务生效，立即重启? (y/N): " r
+    [[ "$r" == "y" ]] && _manage_service "restart"
+}
+
+# 4. 高级设置子菜单
+_advanced_menu() {
+    # 局部颜色定义
+    local CYAN='\033[0;36m'
+    local WHITE='\033[1;37m'
+    local GREY='\033[0;37m'
+    local YELLOW='\033[0;33m'
+    local GREEN='\033[0;32m'
+    local NC='\033[0m'
+    
+    while true; do
+        # 实时获取状态
+        local s_log=$(_get_current_log_level)
+        local s_dns=$(_get_current_dns_group)
+        local s_str=$(_get_current_strategy)
+        
+        clear
+        echo -e "\n\n"
+        echo -e "      ${CYAN}A D V A N C E D   S E T T I N G S${NC}"
+        echo -e "  ${GREY}─────────────────────────────────────────────${NC}"
+        echo -e ""
+        echo -e "  ${WHITE}01.${NC} 日志等级  ${YELLOW}[${s_log}]${NC}"
+        echo -e "  ${WHITE}02.${NC} DNS 模式  ${YELLOW}[${s_dns}]${NC}"
+        echo -e "  ${WHITE}03.${NC} IP 策略   ${YELLOW}[${s_str}]${NC}"
+        echo -e ""
+        echo -e "  ${GREY}─────────────────────────────────────────────${NC}"
+        echo -e "  ${WHITE}00.${NC} 返回主菜单"
+        echo -e "\n"
+        
+        read -e -p "  请输入选项 > " choice
+        case $choice in
+            1|01) _setting_log ;;
+            2|02) _setting_dns ;;
+            3|03) _setting_strategy ;;
+            0|00) return ;;
+            *) echo -e "\n  ${GREY}无效输入...${NC}"; sleep 1 ;;
+        esac
+    done
+}
