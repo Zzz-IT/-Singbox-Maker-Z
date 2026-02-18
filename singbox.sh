@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # 基础路径定义（兼容软链 sb）
 SELF_SCRIPT_PATH="$(readlink -f -- "${BASH_SOURCE[0]}")"
@@ -327,11 +328,23 @@ _stop_argo_tunnel() {
 }
 
 _stop_all_argo_tunnels() {
+    # 1. 尝试通过 PID 文件优雅停止
     for pid_file in /tmp/singbox_argo_*.pid; do
         [ -e "$pid_file" ] || continue
         local port=${pid_file#*argo_}; port=${port%.pid}; _stop_argo_tunnel "$port"
     done
-    pkill -f "cloudflared" 2>/dev/null
+    
+    # 2. [增强] 暴力兜底：强制清理所有残留的 cloudflared
+    # 这里的路径已经是全路径，但在 Cron 里保险起见还是用 path 里的 pkill
+    if command -v pkill >/dev/null 2>&1; then
+        pkill -f "cloudflared" 2>/dev/null
+        sleep 1
+        # 如果还在运行，直接 kill -9
+        pkill -9 -f "cloudflared" 2>/dev/null
+    else
+        # 兼容没有 pkill 的系统
+        killall -9 cloudflared 2>/dev/null
+    fi
 }
 
 _add_argo_vless_ws() {
@@ -1202,19 +1215,40 @@ _quick_deploy() {
 # --- 定时启停功能 ---
 _do_scheduled_start() {
     _info "执行定时启动任务..." >> "$LOG_FILE"
-    _manage_service "start"
+    
+    # 尝试启动
+    if _manage_service "start"; then
+        _info "服务启动指令已发送。" >> "$LOG_FILE"
+    else
+        _error "服务启动失败 (可能是 INIT_SYSTEM 检测错误)" >> "$LOG_FILE"
+    fi
+
     # 恢复 Argo 守护
     if [ -f "$ARGO_METADATA_FILE" ] && [ "$(jq 'length' "$ARGO_METADATA_FILE")" -gt 0 ]; then
         _enable_argo_watchdog
-        _argo_keepalive # 立即尝试拉起一次
+        # 延迟 5 秒再拉起 Argo，等待 Sing-box 网络就绪
+        sleep 5 
+        _argo_keepalive 
     fi
 }
 
 _do_scheduled_stop() {
      _info "执行定时停止任务..." >> "$LOG_FILE"
-     # 先关守护，防止自愈
+     
+     # [优化] 1. 先关守护，防止自愈
      _disable_argo_watchdog
+     
+     # [新增] 2. 再次确认 Crontab 是否干净 (防止上一步因权限或路径失败)
+     local j="keepalive"
+     if crontab -l 2>/dev/null | grep -q "$j"; then
+         # 如果还在，强制再删一次
+         crontab -l 2>/dev/null | grep -Fv "$j" | crontab -
+     fi
+
+     # 3. 停止所有隧道
      _stop_all_argo_tunnels
+     
+     # 4. 停止主服务
      _manage_service "stop"
 }
 
