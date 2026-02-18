@@ -1270,7 +1270,7 @@ _delete_node() {
 _modify_port() {
     if ! jq -e '.inbounds | length > 0' "$CONFIG_FILE" >/dev/null 2>&1; then _warning "无节点"; return; fi
     _info "   修改端口  "
-    local 标签=(); local ports=(); local types=(); local names=(); local i=1
+    local tags=(); local ports=(); local types=(); local names=(); local i=1
     while IFS= read -r node; do
         local tag=$(echo "$node" | jq -r '.tag'); 
         if [[ "$tag" == *"-hop-"* ]] || [[ "$tag" == "argo_"* ]]; then continue; fi
