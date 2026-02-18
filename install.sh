@@ -10,12 +10,10 @@ BIN_LINK="/usr/local/bin/sb"
 tmp_dir=""  # 给 -u 一个安全默认值，避免未定义
 
 cleanup() {
-  # tmp_dir 可能为空（比如下载工具不存在时提前退出），这里要安全处理
-  if [[ -n "${tmp_dir}" && -d "${tmp_dir}" ]]; then
+  if [[ -n "${tmp_dir:-}" && -d "${tmp_dir:-}" ]]; then
     rm -rf -- "${tmp_dir}"
   fi
 }
-trap cleanup EXIT
 
 need_root() {
   if [[ ${EUID:-$(id -u)} -ne 0 ]]; then
