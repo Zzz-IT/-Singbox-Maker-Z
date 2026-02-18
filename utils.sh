@@ -27,5 +27,9 @@ source "${LIB_DIR}/service.sh"
 # shellcheck source=/dev/null
 source "${LIB_DIR}/iptables.sh"
 
+# --- [新增] 加载高级设置模块 ---
+# shellcheck source=/dev/null
+source "${LIB_DIR}/settings.sh"
+
 # 兼容：旧版曾 export 了这些函数
 export -f _check_root _detect_init_system _install_yq _save_iptables_rules
