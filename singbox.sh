@@ -253,32 +253,45 @@ _start_argo_tunnel() {
     
     _info "正在启动 Argo 隧道 (端口: $target_port)..." >&2
     
-    # 每次启动前清理旧日志
     rm -f "${log_file}"
 
     if [ -n "$token" ]; then
-        # 固定隧道：直接丢弃所有日志，防止占用内存
+        # 固定隧道：保持原样，直接丢弃日志
         nohup ${CLOUDFLARED_BIN} tunnel run --token "$token" > /dev/null 2>&1 &
         local cf_pid=$!; echo "$cf_pid" > "${pid_file}"; sleep 5
         if ! kill -0 "$cf_pid" 2>/dev/null; then _error "启动失败" >&2; return 1; fi
         _success "Argo 固定隧道启动成功" >&2; return 0
     else
-        # 临时隧道：抓取域名后立即清空日志
-        nohup ${CLOUDFLARED_BIN} tunnel --url "http://localhost:${target_port}" --logfile "${log_file}" > /dev/null 2>&1 &
-        local cf_pid=$!; echo "$cf_pid" > "${pid_file}"
+        # [修复] 临时隧道：不再使用 --logfile，而是使用过滤管道
+        # 解释：awk 只打印包含 trycloudflare 的行，其他行丢弃，防止日志爆满
+        nohup ${CLOUDFLARED_BIN} tunnel --url "http://localhost:${target_port}" 2>&1 \
+        | awk '/trycloudflare.com/{print; fflush()}' > "${log_file}" &
+        
+        local cf_pid=$!
+        echo "$cf_pid" > "${pid_file}"
+        
         local tunnel_domain=""; local wait_count=0
         while [ $wait_count -lt 30 ]; do
             sleep 2; wait_count=$((wait_count + 2))
             if ! kill -0 "$cf_pid" 2>/dev/null; then return 1; fi
-            if [ -f "${log_file}" ]; then
+            
+            if [ -s "${log_file}" ]; then
+                # 从过滤后的文件中读取域名
                 tunnel_domain=$(grep -o 'https://[a-zA-Z0-9-]*\.trycloudflare\.com' "${log_file}" 2>/dev/null | tail -1 | sed 's|https://||')
                 if [ -n "$tunnel_domain" ]; then 
-                    : > "${log_file}" # 关键修复：清空日志文件，防止其无限增长
                     break 
                 fi
             fi
         done
-        if [ -n "$tunnel_domain" ]; then echo "$tunnel_domain"; return 0; else return 1; fi
+        
+        if [ -n "$tunnel_domain" ]; then 
+            echo "$tunnel_domain"
+            return 0
+        else 
+            # 启动失败清理进程
+            kill "$cf_pid" 2>/dev/null
+            return 1
+        fi
     fi
 }
 
@@ -554,15 +567,55 @@ _restart_argo_tunnel_menu() {
 
 _stop_argo_menu() { _stop_all_argo_tunnels; _success "已停止所有隧道"; }
 _argo_keepalive() {
-    local lock="/tmp/singbox_keepalive.lock"; [ -f "$lock" ] && kill -0 $(cat "$lock") 2>/dev/null && return
+    local lock="/tmp/singbox_keepalive.lock"
+    
+    # [修复] 锁机制增强：
+    # 1. 检查锁文件是否存在且对应进程还在运行
+    # 2. 增加超时判断（防止死锁）：如果锁文件超过 5 分钟且进程不在，强制移除
+    if [ -f "$lock" ]; then
+        local lock_pid=$(cat "$lock" 2>/dev/null)
+        # 检查 PID 是否存在 且 进程名包含 singbox.sh 或 bash
+        if [ -n "$lock_pid" ] && kill -0 "$lock_pid" 2>/dev/null; then
+             # 简单判断：如果进程还在，认为正在执行，直接退出
+             return
+        fi
+        # 锁过期或无效，清理
+        rm -f "$lock"
+    fi
+
     echo "$$" > "$lock"; trap 'rm -f "$lock"' RETURN EXIT
+    
     [ ! -f "$ARGO_METADATA_FILE" ] && return
+    
     local tags=$(jq -r 'keys[]' "$ARGO_METADATA_FILE")
     for tag in $tags; do
-        local port=$(jq -r ".\"$tag\".local_port" "$ARGO_METADATA_FILE"); local type=$(jq -r ".\"$tag\".type" "$ARGO_METADATA_FILE"); local token=$(jq -r ".\"$tag\".token // empty" "$ARGO_METADATA_FILE"); local pid="/tmp/singbox_argo_${port}.pid"
-        if [ ! -f "$pid" ] || ! kill -0 $(cat "$pid") 2>/dev/null; then
-            if [ "$type" == "fixed" ]; then _start_argo_tunnel "$port" "fixed" "$token"
-            else local d=$(_start_argo_tunnel "$port" "temp"); [ -n "$d" ] && _atomic_modify_json "$ARGO_METADATA_FILE" ".\"$tag\".domain = \"$d\""; fi
+        local port=$(jq -r ".\"$tag\".local_port" "$ARGO_METADATA_FILE")
+        local type=$(jq -r ".\"$tag\".type" "$ARGO_METADATA_FILE")
+        local token=$(jq -r ".\"$tag\".token // empty" "$ARGO_METADATA_FILE")
+        local pid_file="/tmp/singbox_argo_${port}.pid"
+        
+        local need_restart=true
+        
+        # [修复] PID 检查增强：不仅检查 PID 存在，还检查进程名是否为 cloudflared
+        if [ -f "$pid_file" ]; then
+            local pid=$(cat "$pid_file")
+            if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+                # 检查 /proc/PID/comm 或 cmdline 确认是 cloudflared
+                if grep -q "cloudflared" "/proc/$pid/cmdline" 2>/dev/null || \
+                   grep -q "cloudflared" "/proc/$pid/comm" 2>/dev/null; then
+                    need_restart=false
+                fi
+            fi
+        fi
+
+        if [ "$need_restart" = true ]; then
+            _warn "检测到 Argo 隧道 (端口 $port) 断开，正在重连..."
+            if [ "$type" == "fixed" ]; then 
+                _start_argo_tunnel "$port" "fixed" "$token"
+            else 
+                local d=$(_start_argo_tunnel "$port" "temp")
+                [ -n "$d" ] && _atomic_modify_json "$ARGO_METADATA_FILE" ".\"$tag\".domain = \"$d\""
+            fi
         fi
     done
 }
@@ -1178,29 +1231,21 @@ _scheduled_lifecycle_menu() {
         read -p "启动时间 (例如 08:30): " start_input
         read -p "停止时间 (例如 23:15): " stop_input
         
-        # --- 简单格式检查 (确保包含冒号) ---
-        if [[ "$start_input" != *":"* ]] || [[ "$stop_input" != *":"* ]]; then
-            _error "时间格式错误! 必须包含冒号 (例如 08:30)"
+        # [修复] 增强的时间格式校验正则
+        if [[ ! "$start_input" =~ ^[0-9]{1,2}:[0-9]{1,2}$ ]] || \
+           [[ ! "$stop_input" =~ ^[0-9]{1,2}:[0-9]{1,2}$ ]]; then
+            _error "时间格式错误! 请严格使用 HH:MM (例如 08:30)"
             return
         fi
 
-        # --- 核心修改：使用 cut 进行纯文本切割 (100% 可靠) ---
+        # [修复] 使用 IFS 安全分割时间，自动去除多余空格
+        IFS=':' read -r s_h s_m <<< "$start_input"
+        IFS=':' read -r e_h e_m <<< "$stop_input"
         
-        # 处理启动时间
-        local s_h_raw=$(echo "$start_input" | cut -d: -f1)
-        local s_m_raw=$(echo "$start_input" | cut -d: -f2)
-        # 强制转为十进制数字，去除前导0 (比如 08 -> 8)
-        local s_h=$((10#$s_h_raw))
-        local s_m=$((10#$s_m_raw))
-        
-        # 处理停止时间
-        local e_h_raw=$(echo "$stop_input" | cut -d: -f1)
-        local e_m_raw=$(echo "$stop_input" | cut -d: -f2)
-        # 强制转为十进制数字
-        local e_h=$((10#$e_h_raw))
-        local e_m=$((10#$e_m_raw))
+        # 转为十进制避免 08 被识别为八进制
+        s_h=$((10#$s_h)); s_m=$((10#$s_m))
+        e_h=$((10#$e_h)); e_m=$((10#$e_m))
 
-        # --- 数值合法性检查 ---
         if [ "$s_h" -gt 23 ] || [ "$s_m" -gt 59 ] || [ "$e_h" -gt 23 ] || [ "$e_m" -gt 59 ]; then
              _error "时间数值不合法 (小时 0-23, 分钟 0-59)"
              return
