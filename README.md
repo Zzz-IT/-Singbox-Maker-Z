@@ -1,90 +1,79 @@
-
 # Singbox Maker Z
 
-> 🚀 **专注小内存 VPS 优化** | 🛡️ **Argo 隧道守护** | ⏰ **定时生命周期管理**
+**基于模块化架构的高性能 Sing-box 编排方案**
 
-本项目基于 [**singbox-lite**](https://github.com/0xdabiaoge/singbox-lite) 进行**魔改**，精简功能，加入定时启停，重构UI。针对低配置环境（如 Alpine/128M）深度优化内存占用，并新增了企业级的 Argo 进程守护与定时启停功能。
+Singbox Maker Z 是一个专为资源受限服务器（如 128MB 内存 VPS）设计的自动化部署与管理系统。它不仅实现了 Sing-box 核心协议的快速配置，更通过内置的进程守护（Watchdog）与精细化的生命周期管理，为用户提供企业级的稳定性保障。
 
-## ✨ 核心特性
+## 核心架构设计
 
-* **🛡️ Argo 隧道全家桶**：集成 **TryCloudflare** (临时) 与 **Token** (固定) 双模式，支持 VLESS/Trojan 穿透。
-* **🐶 独家看门狗 (Watchdog)**：内置进程守护，**每分钟**检测隧道状态，断连自动拉起，确保持久在线。
-* **⏰ 生命周期管理**：支持设置精确的**“工作时间”**（如 08:30 启动，02:15 停止），适合按量付费或定时静默场景。
-* **🧩 模块化架构**：重构为 `singbox.sh` (控制)、`utils.sh` (工具)、`parser.sh` (解析)，自动热更新核心组件。
-* **🧠 智能优化**：动态计算 `GOMEMLIMIT` 防止 OOM，自动规避小内存机器 `apt-get` 死机问题。
+项目采用 **微内核 + 插件化（Library-based）** 的模块化设计。核心逻辑位于 `singbox.sh`，而底层功能拆分为独立的 Shell 库，确保了系统的可维护性与扩展性：
 
----
+* **自动化资源调优**：动态计算 `GOMEMLIMIT`。对于内存 > 64MB 的系统，预留 40MB 给内核；对于极小内存（≤ 64MB）系统，通过极限压缩预留 20MB，确保核心进程在 10MB 的极端配额下仍能稳定运行。
+* **跨发行版兼容层**：自动识别 `systemd` 与 `openrc` 初始化系统，支持 Debian、Ubuntu及 Alpine Linux 等主流发行版。
+* **配置原子化操作**：所有 JSON 与 YAML 配置的修改均通过原子化函数完成，有效避免因脚本中断导致的配置文件损坏。
 
-## 📥 安装 / 更新（推荐）
+## 核心功能详解
 
-模块化版本包含多个文件（`singbox.sh`、`utils.sh`、`lib/`），不再推荐仅下载单个脚本。
+### 1. 高可用 Argo 隧道守护系统
 
-一键安装 / 覆盖更新：
+内置独家“看门狗”逻辑，彻底解决 Argo 隧道随机断连的痛点：
+
+* **状态感知**：通过 `keepalive` 指令每分钟扫描 `cloudflared` 进程状态与日志流。
+* **自动重联**：一旦检测到隧道链路中断，系统将自动触发热重启，并实时更新元数据（Metadata）中的临时域名。
+
+### 2. 全生命周期管理 (Scheduled Lifecycle)
+
+支持对服务运行状态进行精确到分钟的时间编排：
+
+* **定时启停**：允许设定每日固定的服务“工作窗口”（例如：08:00 自动开启，01:30 自动关闭）。
+* **资源静默**：在非运行时间内完全释放系统资源，并清理所有相关的防火墙规则与后台进程。
+
+### 3. 极速部署引擎 (Quick Deploy)
+
+支持一键并行部署 **VLESS-Reality**、**Hysteria2** 与 **TUIC v5** 协议组合：
+
+* **智能去重**：自动生成随机端口并执行冲突检测。
+* **安全预设**：默认集成 `www.apple.com` 等高可信度 SNI 伪装。
+
+## 安装与维护
+
+### 系统部署
+
+建议使用官方安装器进行部署，该程序会自动处理所有二进制依赖（如 `jq`、`yq`、`curl`）及环境初始化：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Zzz-IT/-Singbox-Maker-Z/main/install.sh | bash
+
 ```
 
-运行：
+### 常用管理指令
 
-```bash
-sb
-```
+| 指令 | 作用域 | 技术说明 |
+| --- | --- | --- |
+| `sb` | 全局入口 | 启动交互式管理控制台 |
+| `sb -q` | 快速部署 | 自动执行协议矩阵编排 |
+| `sb keepalive` | 隧道守护 | 手动触发 Argo 链路健康检查 |
+| `sb scheduled_start` | 生命周期 | 强制触发定时启动任务流 |
 
-卸载：
+## 协议支持矩阵
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/Zzz-IT/-Singbox-Maker-Z/main/uninstall.sh | bash
-```
+| 协议 | 传输层 | 安全特性 |
+| --- | --- | --- |
+| **VLESS-Reality** | TCP / Vision | 基于真实 TLS 指纹的抗封锁方案 |
+| **Hysteria 2** | UDP / Salamander | 针对高丢包链路的吞吐量优化 |
+| **TUIC v5** | QUIC / BBR | 低延迟、高性能的现代化传输协议 |
+| **Argo Tunnel** | HTTP/2 | 穿越 NAT 与被墙 IP 的内网穿透技术 |
+| **Shadowsocks** | GCM / 2022 | 经典、稳定且具备多路复用能力的协议 |
 
-### ⚡ 快速部署
+## 目录规范
 
-安装完成后，输入以下指令即可自动部署 **VLESS-Reality**、**Hysteria2**、**TUICv5** 三节点：
-
-```bash
-sb -q
-```
-
-**特点**：
-
-* ✅ **端口防冲**：自动生成随机端口并强制去重
-* ✅ **默认伪装**：SNI 默认使用 `www.apple.com`
-* ✅ **自动展示**：自动展示系统版本和运行方式
-* ✅ **即刻管理**：部署后可运行 `sb` 进入管理菜单
+* `/usr/local/etc/sing-box/`：业务配置与元数据存储路径。
+* `/usr/local/share/singbox-maker-z/`：模块化组件存放路径。
+* `/var/log/sing-box.log`：服务运行日志（支持自动轮转清理）。
 
 ---
 
-## 📋 支持协议矩阵
-
-|协议|特性|适用场景|
-|-|-|-|
-|**VLESS-Reality**|Vision 流控 / 免域名|🚀 主力协议，高隐蔽性|
-|**Hysteria2**|UDP / 端口跳跃 / 伪装|⚡ 弱网救星，防 QoS|
-|**TUIC v5**|QUIC / BBR / 0-RTT|⚡ 高性能低延迟|
-|**Argo Tunnel**|Cloudflare 内网穿透|☁️ 无公网 IP / 救被墙 IP|
-|**AnyTLS**|平滑伪装|🛡️ 特殊网络环境|
-|**Shadowsocks**|2022 / GCM / Multiplex|🔄 兼容老旧设备|
-
-## 🕹️ 常用指令
-
-|指令|说明|
-|-|-|
-|**`sb`**|打开管理主菜单|
-|**`sb -q`**|极速部署 (Reality + Hy2 + Tuic)|
-|**`sb keepalive`**|手动触发一次 Argo 守护检查|
-|**`sb scheduled\_start`**|手动触发定时启动流程|
-
----
-
-## 🤝 致谢 (Credits)
-
-本项目基于开源项目 [**singbox-lite**](https://github.com/0xdabiaoge/singbox-lite) 进行二次开发与重构。
-
-特别感谢原作者 [**0xdabiaoge**](https://github.com/0xdabiaoge) 的杰出工作与开源精神！
-
----
-
-<p align="center">Made with ❤️ by Zzz-IT</p>
+**致谢**：本项目在 [singbox-lite](https://github.com/0xdabiaoge/singbox-lite) 的基础上进行了深度重构与功能演进。
 
 
 
