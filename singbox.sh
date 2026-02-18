@@ -636,9 +636,9 @@ _argo_keepalive() {
     while IFS= read -r tag; do
         [ -z "$tag" ] && continue
         
-        local port=$(jq -r ".\"$tag\".local_port" "$ARGO_METADATA_FILE")
-        local type=$(jq -r ".\"$tag\".type" "$ARGO_METADATA_FILE")
-        local token=$(jq -r ".\"$tag\".token // empty" "$ARGO_METADATA_FILE")
+        local port=$(jq -r --arg t "$tag" '.[$t].local_port' "$ARGO_METADATA_FILE")
+        local type=$(jq -r --arg t "$tag" '.[$t].type' "$ARGO_METADATA_FILE")
+        local token=$(jq -r --arg t "$tag" '.[$t].token // empty' "$ARGO_METADATA_FILE")
         local pid_file="/tmp/singbox_argo_${port}.pid"
         
         local need_restart=true
