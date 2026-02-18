@@ -4,11 +4,18 @@
 # - 负责高级设置功能：日志、DNS、路由策略
 # - 被 utils.sh 加载，依赖全局变量 $CONFIG_FILE
 
-# --- 辅助函数：获取当前状态 ---
+# --- 辅助函数：获取当前状态并转换为中文名称 ---
 
 _get_current_log_level() {
     [ ! -f "$CONFIG_FILE" ] && echo "未知" && return
-    jq -r '.log.level // "error"' "$CONFIG_FILE"
+    local level=$(jq -r '.log.level // "error"' "$CONFIG_FILE")
+    case "$level" in
+        "error") echo "Error (错误)" ;;
+        "warn")  echo "Warn (警告)" ;;
+        "info")  echo "Info (信息)" ;;
+        "debug") echo "Debug (调试)" ;;
+        *) echo "$level" ;;
+    esac
 }
 
 _get_current_dns_group() {
@@ -26,7 +33,13 @@ _get_current_strategy() {
     # 提取 action=resolve 的 strategy，默认为 prefer_ipv6
     local s=$(jq -r '.route.rules[]? | select(.action == "resolve")? | .strategy // empty' "$CONFIG_FILE" | head -1)
     [ -z "$s" ] && s="prefer_ipv6"
-    echo "$s"
+    case "$s" in
+        "prefer_ipv6") echo "优先 IPv6" ;;
+        "prefer_ipv4") echo "优先 IPv4" ;;
+        "ipv4_only")   echo "仅 IPv4" ;;
+        "ipv6_only")   echo "仅 IPv6" ;;
+        *) echo "$s" ;;
+    esac
 }
 
 # --- 功能函数 ---
@@ -45,7 +58,7 @@ _setting_log() {
     echo -e "  ${GREY}00. 返回${NC}"
     echo -e ""
     
-    read -p "请选择[01-04]: " level_c
+    read -p "请选择 [01-04]: " level_c
 
     local level="error"
     case "$level_c" in
@@ -71,15 +84,15 @@ _setting_dns() {
     echo -e " ${CYAN}   DNS 策略配置  ${NC}"
     echo -e " ${YELLOW}当前状态: ${current}${NC}"
     echo -e ""
-    echo -e "  ${WHITE}01.${NC} 国外优先 (Cloudflare/Google/Quad9)[推荐]"
+    echo -e "  ${WHITE}01.${NC} 国外优先 (Cloudflare/Google/Quad9) [推荐]"
     echo -e "     ${GREY}适合: 境外 VPS，能够访问国际互联网的环境${NC}"
     echo -e "  ${WHITE}02.${NC} 国内优先 (AliDNS/DNSPod)"
-    echo -e "     ${GREY}适合: 国内中转机，或连接受限的环境${NC}"
+    echo -e "     ${GREY}适合: 国内服务器或者VPS${NC}"
     echo -e ""
     echo -e "  ${GREY}00. 返回${NC}"
     echo -e ""
 
-    read -p "请选择[01-02]: " dns_c
+    read -p "请选择 [01-02]: " dns_c
     
     local dns_json=""
     case "$dns_c" in
@@ -133,7 +146,7 @@ _setting_strategy() {
     echo -e "  ${GREY}00. 返回${NC}"
     echo -e ""
 
-    read -p "请选择[01-04]: " s_c
+    read -p "请选择 [01-04]: " s_c
     
     local strategy="prefer_ipv6"
     case "$s_c" in
@@ -170,8 +183,6 @@ _advanced_menu() {
     local WHITE='\033[1;37m'
     local GREY='\033[0;37m'
     local YELLOW='\033[0;33m'
-    local GREEN='\033[0;32m'
-    local RED='\033[1;31m'
     local NC='\033[0m'
     
     while true; do
@@ -184,9 +195,9 @@ _advanced_menu() {
         echo -e "       ${CYAN}A D V A N C E D   S E T T I N G S${NC}"
         echo -e "  ${GREY}─────────────────────────────────────────────${NC}"
         echo -e ""
-        echo -e "  ${WHITE}01.${NC} 日志等级            ${NC}状态:${YELLOW}${s_log}"
-        echo -e "  ${WHITE}02.${NC} DNS 模式            ${NC}状态:${YELLOW}${s_dns}"
-        echo -e "  ${WHITE}03.${NC} IP 策略             ${NC}状态:${YELLOW}${s_str}"
+        echo -e "  ${WHITE}01.${NC} 日志等级            ${NC}状态: ${YELLOW}${s_log}${NC}"
+        echo -e "  ${WHITE}02.${NC} DNS 模式            ${NC}状态: ${YELLOW}${s_dns}${NC}"
+        echo -e "  ${WHITE}03.${NC} IP 策略             ${NC}状态: ${YELLOW}${s_str}${NC}"
         echo -e ""
         echo -e "  ${GREY}─────────────────────────────────────────────${NC}"
         echo -e "  ${WHITE}00.${NC} 返回主菜单"
