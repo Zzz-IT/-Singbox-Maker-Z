@@ -732,6 +732,9 @@ _argo_menu() {
 }
 # --- 服务与配置管理 ---
 _create_systemd_service() {
+    # 动态查找 bash 路径，找不到则回退到 /bin/bash
+    local bash_path=$(command -v bash || echo "/bin/bash")
+    
     cat > "$SERVICE_FILE" <<EOF
 [Unit]
 Description=sing-box service
@@ -741,8 +744,8 @@ After=network.target nss-lookup.target
 Type=simple
 Environment="GOMEMLIMIT=$(_get_mem_limit)MiB"
 ExecStart=${SINGBOX_BIN} run -c ${CONFIG_FILE}
-# [新增] 启动后立即检查并拉起 Argo 隧道 (非阻塞模式)
-ExecStartPost=/bin/bash "${SELF_SCRIPT_PATH}" keepalive
+# [修复] 使用动态获取的 bash 路径
+ExecStartPost=${bash_path} "${SELF_SCRIPT_PATH}" keepalive
 Restart=on-failure
 RestartSec=3s
 LimitNOFILE=infinity
@@ -1234,7 +1237,13 @@ _delete_node() {
         echo -e "  ${CYAN}$i)${NC} ${dn} (${YELLOW}${type}${NC}) @ ${port}"; ((i++))
     done < <(jq -c '.inbounds[]' "$CONFIG_FILE")
     echo -e "  ${RED}99)${NC} 删除所有"
-    read -p "编号 (0返回): " num; [[ "$num" == "0" ]] && return
+    read -p "编号 (0返回): " num
+    # [修复] 增加数字校验
+    if [[ ! "$num" =~ ^[0-9]+$ ]]; then
+    _error "无效输入，请输入数字。"
+    return
+    fi
+    [[ "$num" == "0" ]] && return 
     if [ "$num" == "99" ]; then
          _atomic_modify_json "$CONFIG_FILE" '.inbounds = []'; _atomic_modify_json "$METADATA_FILE" '{}'
          ${YQ_BINARY} eval '.proxies = []' -i "$CLASH_YAML_FILE"
@@ -1261,7 +1270,7 @@ _delete_node() {
 _modify_port() {
     if ! jq -e '.inbounds | length > 0' "$CONFIG_FILE" >/dev/null 2>&1; then _warning "无节点"; return; fi
     _info "   修改端口  "
-    local tags=(); local ports=(); local types=(); local names=(); local i=1
+    local 标签=(); local ports=(); local types=(); local names=(); local i=1
     while IFS= read -r node; do
         local tag=$(echo "$node" | jq -r '.tag'); 
         if [[ "$tag" == *"-hop-"* ]] || [[ "$tag" == "argo_"* ]]; then continue; fi
@@ -1271,7 +1280,13 @@ _modify_port() {
         local dn=$(jq -r --arg t "$tag" '.[$t].name // empty' "$METADATA_FILE"); if [ -z "$dn" ]; then dn=$(echo "$tag" | sed "s/_${port}$//" | tr '_' ' '); fi; names+=("$dn")
         echo -e "  ${CYAN}$i)${NC} ${dn} (${type}) @ ${port}"; ((i++))
     done < <(jq -c '.inbounds[]' "$CONFIG_FILE")
-    read -p "编号 (0返回): " num; [[ "$num" == "0" ]] && return
+    read -p "编号 (0返回): " num
+    # [修复] 增加数字校验
+    if [[ ! "$num" =~ ^[0-9]+$ ]]; then
+    _error "无效输入，请输入数字。"
+    return
+    fi
+    [[ "$num" == "0" ]] && return 
     local idx=$((num - 1)); local old_tag=${tags[$idx]}; local old_port=${ports[$idx]}; local type=${types[$idx]}; local name=${names[$idx]}
     read -p "请输入新端口: " new_port
     if [[ ! "$new_port" =~ ^[0-9]+$ ]] || [ "$new_port" -le 0 ] || [ "$new_port" -gt 65535 ]; then _error "无效端口"; return; fi
