@@ -256,27 +256,30 @@ _start_argo_tunnel() {
     rm -f "${log_file}"
 
     if [ -n "$token" ]; then
-        # 固定隧道：保持原样，直接丢弃日志
+        # 固定隧道：保持原样
         nohup ${CLOUDFLARED_BIN} tunnel run --token "$token" > /dev/null 2>&1 &
         local cf_pid=$!; echo "$cf_pid" > "${pid_file}"; sleep 5
         if ! kill -0 "$cf_pid" 2>/dev/null; then _error "启动失败" >&2; return 1; fi
         _success "Argo 固定隧道启动成功" >&2; return 0
     else
-        # [修复] 临时隧道：不再使用 --logfile，而是使用过滤管道
-        # 解释：awk 只打印包含 trycloudflare 的行，其他行丢弃，防止日志爆满
+        # [优化] 临时隧道：增加启动前的清理，防止端口冲突或残留进程
+        pkill -f "cloudflared tunnel --url http://localhost:${target_port}" 2>/dev/null
+        
+        # 使用管道过滤日志，避免 OOM
         nohup ${CLOUDFLARED_BIN} tunnel --url "http://localhost:${target_port}" 2>&1 \
         | awk '/trycloudflare.com/{print; fflush()}' > "${log_file}" &
         
-        local cf_pid=$!
-        echo "$cf_pid" > "${pid_file}"
+        local pipe_pid=$! # 注意：这里拿到的是 awk 的 PID
+        echo "$pipe_pid" > "${pid_file}"
         
         local tunnel_domain=""; local wait_count=0
         while [ $wait_count -lt 30 ]; do
             sleep 2; wait_count=$((wait_count + 2))
-            if ! kill -0 "$cf_pid" 2>/dev/null; then return 1; fi
+            
+            # 检查管道进程是否存活
+            if ! kill -0 "$pipe_pid" 2>/dev/null; then return 1; fi
             
             if [ -s "${log_file}" ]; then
-                # 从过滤后的文件中读取域名
                 tunnel_domain=$(grep -o 'https://[a-zA-Z0-9-]*\.trycloudflare\.com' "${log_file}" 2>/dev/null | tail -1 | sed 's|https://||')
                 if [ -n "$tunnel_domain" ]; then 
                     break 
@@ -288,8 +291,10 @@ _start_argo_tunnel() {
             echo "$tunnel_domain"
             return 0
         else 
-            # 启动失败清理进程
-            kill "$cf_pid" 2>/dev/null
+            # [关键优化] 启动失败时的精确清理
+            kill "$pipe_pid" 2>/dev/null # 杀掉 awk
+            # 额外杀掉对应的 cloudflared 进程，防止它失去管道后变成僵尸
+            pkill -f "cloudflared tunnel --url http://localhost:${target_port}" 2>/dev/null
             return 1
         fi
     fi
@@ -569,17 +574,21 @@ _stop_argo_menu() { _stop_all_argo_tunnels; _success "已停止所有隧道"; }
 _argo_keepalive() {
     local lock="/tmp/singbox_keepalive.lock"
     
-    # [修复] 锁机制增强：
-    # 1. 检查锁文件是否存在且对应进程还在运行
-    # 2. 增加超时判断（防止死锁）：如果锁文件超过 5 分钟且进程不在，强制移除
+    # [优化] 锁机制增强：
+    # 1. 检查锁文件是否存在
+    # 2. 检查 PID 是否存在
+    # 3. [新增] 检查进程名是否匹配 (防止 PID 复用导致的误判)
     if [ -f "$lock" ]; then
         local lock_pid=$(cat "$lock" 2>/dev/null)
-        # 检查 PID 是否存在 且 进程名包含 singbox.sh 或 bash
         if [ -n "$lock_pid" ] && kill -0 "$lock_pid" 2>/dev/null; then
-             # 简单判断：如果进程还在，认为正在执行，直接退出
-             return
+             # 读取进程命令行，确认是否真的是 singbox.sh 或 bash 进程
+             # 注意：Alpine 下 ps 输出可能不同，直接读 /proc 最稳妥
+             if grep -qE "singbox\.sh|bash|sb" "/proc/$lock_pid/cmdline" 2>/dev/null; then
+                 return
+             fi
+             # 如果走到这里，说明 PID 存在但不是本脚本 (PID 复用)，视为锁失效，继续向下执行清理
+             _warn "检测到僵尸锁 (PID $lock_pid 非本脚本)，正在自动清理..."
         fi
-        # 锁过期或无效，清理
         rm -f "$lock"
     fi
 
@@ -596,11 +605,10 @@ _argo_keepalive() {
         
         local need_restart=true
         
-        # [修复] PID 检查增强：不仅检查 PID 存在，还检查进程名是否为 cloudflared
         if [ -f "$pid_file" ]; then
             local pid=$(cat "$pid_file")
             if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-                # 检查 /proc/PID/comm 或 cmdline 确认是 cloudflared
+                # 保持原有的 Argo 进程检查逻辑 (这里已经写得很好了)
                 if grep -q "cloudflared" "/proc/$pid/cmdline" 2>/dev/null || \
                    grep -q "cloudflared" "/proc/$pid/comm" 2>/dev/null; then
                     need_restart=false
