@@ -1658,6 +1658,7 @@ main() {
     fi
 
     # --- [额外补充] 日志自动清理逻辑 ---
+    # 如果日志文件超过 10MB，则清空
     [ -f "${LOG_FILE}" ] && [ $(stat -c%s "${LOG_FILE}") -gt 10485760 ] && : > "${LOG_FILE}"
     
     _set_beijing_timezone
@@ -1667,8 +1668,20 @@ main() {
     
     local first=false
     if [ ! -f "${SINGBOX_BIN}" ]; then _install_sing_box; first=true; fi
+    
+    # 1. 初始化配置文件 (如果不存在)
     if [ ! -f "${CONFIG_FILE}" ]; then _initialize_config_files; fi
-    _cleanup_legacy_config; _create_service_files
+    
+    # 2. 清理旧版本格式
+    _cleanup_legacy_config
+    
+    # 3. [新增] 自动检查并补全默认的高级设置 (Log/DNS/Route)
+    # 注意：此函数定义在 lib/settings.sh 中，用于修复缺失配置
+    _check_and_fill_defaults
+
+    # 4. 创建或更新服务文件
+    _create_service_files
+    
     if [ "$first" = true ]; then _manage_service "start"; fi
     if [ "$QUICK_DEPLOY_MODE" = true ]; then _quick_deploy; exit 0; fi
     _main_menu
