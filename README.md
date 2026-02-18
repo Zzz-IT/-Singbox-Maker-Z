@@ -1,6 +1,6 @@
 # Singbox Maker Z
 
-**次世代网络流量编排引擎：轻量级、模块化与全托管的完美平衡**
+**全新重构的Singbox部署管理器：轻量级、模块化与全托管的完美平衡**
 
 <p align="left">
 <img src="pic/主菜单.png" alt="Network Dashboard Preview" width="400">
@@ -87,6 +87,7 @@ Singbox Maker Z 是一个专注于资源受限环境下的高可用流量代理�
 ---
 
 **致谢**：本方案基于 [singbox-lite](https://github.com/0xdabiaoge/singbox-lite) 进行了深度重构与功能演进。
+
 
 
 
