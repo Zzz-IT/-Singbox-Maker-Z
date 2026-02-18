@@ -34,23 +34,27 @@ _get_current_strategy() {
 # 1. 日志设置
 _setting_log() {
     local current=$(_get_current_log_level)
-    echo -e " ${CYAN}   日志配置 (Log Settings)  ${NC}"
+    echo -e " ${CYAN}   日志配置  ${NC}"
     echo -e " ${YELLOW}当前状态: ${current}${NC}"
     echo -e ""
-    echo -e "  ${WHITE}1.${NC} Error (仅错误 - 推荐/默认)"
-    echo -e "  ${WHITE}2.${NC} Warn  (警告)"
-    echo -e "  ${WHITE}3.${NC} Info  (信息 - 调试用)"
-    echo -e "  ${WHITE}4.${NC} Debug (调试 - 极量日志)"
+    echo -e "  ${WHITE}01.${NC} Error (仅错误 - 推荐/默认)"
+    echo -e "  ${WHITE}02.${NC} Warn  (警告)"
+    echo -e "  ${WHITE}03.${NC} Info  (信息 - 调试用)"
+    echo -e "  ${WHITE}04.${NC} Debug (调试 - 极量日志)"
     echo -e ""
-    read -p "请选择日志等级 [1-4] (回车取消): " level_c
-    [ -z "$level_c" ] && return
+    echo -e "  ${GREY}00. 返回${NC}"
+    echo -e ""
+    
+    read -p "请选择[01-04]: " level_c
 
     local level="error"
     case $level_c in
-        2) level="warn" ;;
-        3) level="info" ;;
-        4) level="debug" ;;
-        *) level="error" ;;
+        2|02) level="warn" ;;
+        3|03) level="info" ;;
+        4|04) level="debug" ;;
+        1|01) level="error" ;;
+        0|00) return ;;  # 统一退出
+        *) echo -e "${RED}无效输入${NC}"; sleep 1; return ;;
     esac
 
     local log_json=$(jq -n --arg l "$level" '{"level": $l, "timestamp": false}')
@@ -58,46 +62,51 @@ _setting_log() {
     _success "日志等级已更新为: $level"
     
     read -p "需要重启服务生效，立即重启? (y/N): " r
-    [[ "$r" == "y" ]] && _manage_service "restart"
+    [[ "$r" == "y" || "$r" == "Y" ]] && _manage_service "restart"
 }
 
 # 2. DNS 设置
 _setting_dns() {
     local current=$(_get_current_dns_group)
-    echo -e " ${CYAN}   DNS 策略配置 (DNS Settings)  ${NC}"
+    echo -e " ${CYAN}   DNS 策略配置  ${NC}"
     echo -e " ${YELLOW}当前状态: ${current}${NC}"
     echo -e ""
-    echo -e "  ${WHITE}1.${NC} 国外优先 (Cloudflare/Google/Quad9) - ${YELLOW}推荐${NC}"
+    echo -e "  ${WHITE}01.${NC} 国外优先 (Cloudflare/Google/Quad9)[推荐]"
     echo -e "     ${GREY}适合: 境外 VPS，能够访问国际互联网的环境${NC}"
-    echo -e "  ${WHITE}2.${NC} 国内优先 (AliDNS/DNSPod)"
+    echo -e "  ${WHITE}02.${NC} 国内优先 (AliDNS/DNSPod)"
     echo -e "     ${GREY}适合: 国内中转机，或连接受限的环境${NC}"
     echo -e ""
-    read -p "请选择 DNS 组 [1-2] (回车取消): " dns_c
-    [ -z "$dns_c" ] && return
+    echo -e "  ${GREY}00. 返回${NC}"
+    echo -e ""
 
+    read -p "请选择[01-02]: " dns_c
+    
     local dns_json=""
-    if [ "$dns_c" == "2" ]; then
-        # 国内组
-        dns_json='{
-            "servers": [
-                {"type": "udp", "tag": "bootstrap-cn", "server": "223.5.5.5", "server_port": 53},
-                {"type": "https", "tag": "dns", "server": "dns.alidns.com", "path": "/dns-query", "domain_resolver": "bootstrap-cn"},
-                {"type": "https", "tag": "doh-tencent", "server": "doh.pub", "path": "/dns-query", "domain_resolver": "bootstrap-cn"}
-            ]
-        }'
-        _info "已选择: 国内 DNS 组"
-    else
-        # 国外组
-        dns_json='{
-            "servers": [
-                {"type": "udp", "tag": "bootstrap-v4", "server": "1.1.1.1", "server_port": 53},
-                {"type": "https", "tag": "dns", "server": "cloudflare-dns.com", "path": "/dns-query", "domain_resolver": "bootstrap-v4"},
-                {"type": "https", "tag": "doh-google", "server": "dns.google", "path": "/dns-query", "domain_resolver": "bootstrap-v4"},
-                {"type": "https", "tag": "doh-quad9", "server": "dns.quad9.net", "path": "/dns-query", "domain_resolver": "bootstrap-v4"}
-            ]
-        }'
-        _info "已选择: 国外 DNS 组"
-    fi
+    case $dns_c 在
+        2|02) # 国内组
+            dns_json='{
+                "servers": [
+                    {"输入": "udp", "tag": "bootstrap-cn", "server": "223.5.5.5", "server_port": 53},
+                    {"type": "https", "tag": "dns", "server": "dns.alidns.com", "path": "/dns-query", "domain_resolver": "bootstrap-cn"},
+                    {"type": "https", "tag": "doh-tencent", "server": "doh.pub", "path": "/dns-query", "domain_resolver": "bootstrap-cn"}
+                ]
+            }'
+            _info "已选择: 国内 DNS 组"
+            ;;
+        1|01) # 国外组
+            dns_json='{
+                "servers": [
+                    {"type": "udp", "tag": "bootstrap-v4", "server": "1.1.1.1", "server_port": 53},
+                    {"type": "https", "tag": "dns", "server": "cloudflare-dns.com", "path": "/dns-query", "domain_resolver": "bootstrap-v4"},
+                    {"type": "https", "tag": "doh-google", "server": "dns.google", "path": "/dns-query", "domain_resolver": "bootstrap-v4"},
+                    {"type": "https", "tag": "doh-quad9", "server": "dns.quad9.net", "path": "/dns-query", "domain_resolver": "bootstrap-v4"}
+                ]
+            }'
+            _info "已选择: 国外 DNS 组"
+            ;;
+        0|00) return ;;
+        *) echo -e "${RED}无效输入${NC}"; sleep 1; return ;;
+    esac
 
     _atomic_modify_json "$CONFIG_FILE" ".dns = $dns_json"
     if ! jq -e '.route' "$CONFIG_FILE" >/dev/null 2>&1; then
@@ -107,29 +116,33 @@ _setting_dns() {
 
     _success "DNS 配置已更新"
     read -p "需要重启服务生效，立即重启? (y/N): " r
-    [[ "$r" == "y" ]] && _manage_service "restart"
+    [[ "$r" == "y" || "$r" == "Y" ]] && _manage_service "restart"
 }
 
 # 3. 出站/路由策略设置
 _setting_strategy() {
     local current=$(_get_current_strategy)
-    echo -e " ${CYAN}   IP 优选策略 (IP Strategy)  ${NC}"
+    echo -e " ${CYAN}   IP 出站策略   ${NC}"
     echo -e " ${YELLOW}当前状态: ${current}${NC}"
     echo -e ""
-    echo -e "  ${WHITE}1.${NC} 优先 IPv6 (prefer_ipv6) - ${YELLOW}默认${NC}"
-    echo -e "  ${WHITE}2.${NC} 优先 IPv4 (prefer_ipv4)"
-    echo -e "  ${WHITE}3.${NC} 仅 IPv4   (ipv4_only)"
-    echo -e "  ${WHITE}4.${NC} 仅 IPv6   (ipv6_only)"
+    echo -e "  ${WHITE}01.${NC} 优先 IPv6 (prefer_ipv6) [默认]"
+    echo -e "  ${WHITE}02.${NC} 优先 IPv4 (prefer_ipv4)"
+    echo -e "  ${WHITE}03.${NC} 仅 IPv4   (ipv4_only)"
+    echo -e "  ${WHITE}04.${NC} 仅 IPv6   (ipv6_only)"
     echo -e ""
-    read -p "请选择策略 [1-4] (回车取消): " s_c
-    [ -z "$s_c" ] && return
+    echo -e "  ${GREY}00. 返回${NC}"
+    echo -e ""
 
+    read -p "请选择[01-04]: " s_c
+    
     local strategy="prefer_ipv6"
-    case $s_c in
-        2) strategy="prefer_ipv4" ;;
-        3) strategy="ipv4_only" ;;
-        4) strategy="ipv6_only" ;;
-        *) strategy="prefer_ipv6" ;;
+    case $s_c 在
+        2|02) strategy="prefer_ipv4" ;;
+        3|03) strategy="ipv4_only" ;;
+        4|04) strategy="ipv6_only" ;;
+        1|01) strategy="prefer_ipv6" ;;
+        0|00) return ;;
+        *) echo -e "${RED}无效输入${NC}"; sleep 1; return ;;
     esac
 
     local route_json=$(jq -n --arg s "$strategy" '{
@@ -148,7 +161,7 @@ _setting_strategy() {
     _success "出站策略已更新为: $strategy"
     
     read -p "需要重启服务生效，立即重启? (y/N): " r
-    [[ "$r" == "y" ]] && _manage_service "restart"
+    [[ "$r" == "y" || "$r" == "Y" ]] && _manage_service "restart"
 }
 
 # 4. 高级设置子菜单
@@ -159,6 +172,7 @@ _advanced_menu() {
     local GREY='\033[0;37m'
     local YELLOW='\033[0;33m'
     local GREEN='\033[0;32m'
+    local RED='\033[1;31m'
     local NC='\033[0m'
     
     while true; do
@@ -169,7 +183,7 @@ _advanced_menu() {
         
         clear
         echo -e "\n\n"
-        echo -e "      ${CYAN}A D V A N C E D   S E T T I N G S${NC}"
+        echo -e "       ${CYAN}A D V A N C E D   S E T T I N G S${NC}"
         echo -e "  ${GREY}─────────────────────────────────────────────${NC}"
         echo -e ""
         echo -e "  ${WHITE}01.${NC} 日志等级  ${YELLOW}[${s_log}]${NC}"
@@ -186,7 +200,7 @@ _advanced_menu() {
             2|02) _setting_dns ;;
             3|03) _setting_strategy ;;
             0|00) return ;;
-            *) echo -e "\n  ${GREY}无效输入...${NC}"; sleep 1 ;;
+            *) echo -e "\n  ${GREY}无效输入，请重试...${NC}"; sleep 1 ;;
         esac
     done
 }
