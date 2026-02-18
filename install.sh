@@ -47,7 +47,8 @@ main() {
   local tar_file="${tmp_dir}/src.tar.gz"
   download "$tar_url" "$tar_file"
 
-  tar -xzf "$tar_file" -C "$tmp_dir"
+  # 修改此处：增加 --exclude="*/pic" 参数
+  tar -xzf "$tar_file" -C "$tmp_dir" --exclude="*/pic"
 
   local src_dir="${tmp_dir}/-Singbox-Maker-Z-${BRANCH}"
 
