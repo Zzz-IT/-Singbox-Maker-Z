@@ -736,12 +736,17 @@ _create_systemd_service() {
 [Unit]
 Description=sing-box service
 After=network.target nss-lookup.target
+
 [Service]
+Type=simple
 Environment="GOMEMLIMIT=$(_get_mem_limit)MiB"
 ExecStart=${SINGBOX_BIN} run -c ${CONFIG_FILE}
+# [新增] 启动后立即检查并拉起 Argo 隧道 (非阻塞模式)
+ExecStartPost=/bin/bash "${SELF_SCRIPT_PATH}" keepalive
 Restart=on-failure
 RestartSec=3s
 LimitNOFILE=infinity
+
 [Install]
 WantedBy=multi-user.target
 EOF
@@ -759,8 +764,20 @@ respawn_max=0
 pidfile="${PID_FILE}"
 output_log="${LOG_FILE}"
 error_log="${LOG_FILE}"
-depend() { need net; after firewall; }
-start_pre() { export GOMEMLIMIT="$(_get_mem_limit)MiB"; }
+
+depend() { 
+    need net
+    after firewall
+}
+
+start_pre() { 
+    export GOMEMLIMIT="$(_get_mem_limit)MiB"
+}
+
+# [新增] 启动后立即拉起 Argo
+start_post() {
+    bash "${SELF_SCRIPT_PATH}" keepalive >/dev/null 2>&1 &
+}
 EOF
     chmod +x "$SERVICE_FILE"
 }
