@@ -1,79 +1,90 @@
 # Singbox Maker Z
 
-**基于模块化架构的高性能 Sing-box 编排方案**
+**次世代网络流量编排引擎：轻量级、模块化与全托管的完美平衡**
 
-Singbox Maker Z 是一个专为资源受限服务器（如 128MB 内存 VPS）设计的自动化部署与管理系统。它不仅实现了 Sing-box 核心协议的快速配置，更通过内置的进程守护（Watchdog）与精细化的生命周期管理，为用户提供企业级的稳定性保障。
+<p align="center">
+<img src="pic/主菜单.png" alt="Network Dashboard Preview" width="600">
+</p>
 
-## 核心架构设计
-
-项目采用 **微内核 + 插件化（Library-based）** 的模块化设计。核心逻辑位于 `singbox.sh`，而底层功能拆分为独立的 Shell 库，确保了系统的可维护性与扩展性：
-
-* **自动化资源调优**：动态计算 `GOMEMLIMIT`。对于内存 > 64MB 的系统，预留 40MB 给内核；对于极小内存（≤ 64MB）系统，通过极限压缩预留 20MB，确保核心进程在 10MB 的极端配额下仍能稳定运行。
-* **跨发行版兼容层**：自动识别 `systemd` 与 `openrc` 初始化系统，支持 Debian、Ubuntu及 Alpine Linux 等主流发行版。
-* **配置原子化操作**：所有 JSON 与 YAML 配置的修改均通过原子化函数完成，有效避免因脚本中断导致的配置文件损坏。
-
-## 核心功能详解
-
-### 1. 高可用 Argo 隧道守护系统
-
-内置独家“看门狗”逻辑，彻底解决 Argo 隧道随机断连的痛点：
-
-* **状态感知**：通过 `keepalive` 指令每分钟扫描 `cloudflared` 进程状态与日志流。
-* **自动重联**：一旦检测到隧道链路中断，系统将自动触发热重启，并实时更新元数据（Metadata）中的临时域名。
-
-### 2. 全生命周期管理 (Scheduled Lifecycle)
-
-支持对服务运行状态进行精确到分钟的时间编排：
-
-* **定时启停**：允许设定每日固定的服务“工作窗口”（例如：08:00 自动开启，01:30 自动关闭）。
-* **资源静默**：在非运行时间内完全释放系统资源，并清理所有相关的防火墙规则与后台进程。
-
-### 3. 极速部署引擎 (Quick Deploy)
-
-支持一键并行部署 **VLESS-Reality**、**Hysteria2** 与 **TUIC v5** 协议组合：
-
-* **智能去重**：自动生成随机端口并执行冲突检测。
-* **安全预设**：默认集成 `www.apple.com` 等高可信度 SNI 伪装。
-
-## 安装与维护
-
-### 系统部署
-
-建议使用官方安装器进行部署，该程序会自动处理所有二进制依赖（如 `jq`、`yq`、`curl`）及环境初始化：
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/Zzz-IT/-Singbox-Maker-Z/main/install.sh | bash
-
-```
-
-### 常用管理指令
-
-| 指令 | 作用域 | 技术说明 |
-| --- | --- | --- |
-| `sb` | 全局入口 | 启动交互式管理控制台 |
-| `sb -q` | 快速部署 | 自动执行协议矩阵编排 |
-| `sb keepalive` | 隧道守护 | 手动触发 Argo 链路健康检查 |
-| `sb scheduled_start` | 生命周期 | 强制触发定时启动任务流 |
-
-## 协议支持矩阵
-
-| 协议 | 传输层 | 安全特性 |
-| --- | --- | --- |
-| **VLESS-Reality** | TCP / Vision | 基于真实 TLS 指纹的抗封锁方案 |
-| **Hysteria 2** | UDP / Salamander | 针对高丢包链路的吞吐量优化 |
-| **TUIC v5** | QUIC / BBR | 低延迟、高性能的现代化传输协议 |
-| **Argo Tunnel** | HTTP/2 | 穿越 NAT 与被墙 IP 的内网穿透技术 |
-| **Shadowsocks** | GCM / 2022 | 经典、稳定且具备多路复用能力的协议 |
-
-## 目录规范
-
-* `/usr/local/etc/sing-box/`：业务配置与元数据存储路径。
-* `/usr/local/share/singbox-maker-z/`：模块化组件存放路径。
-* `/var/log/sing-box.log`：服务运行日志（支持自动轮转清理）。
+Singbox Maker Z 是一个专注于资源受限环境下的高可用流量代理编排方案。它不只是简单的安装脚本，而是一套严谨的、采用模块化架构设计的服务管理框架。
 
 ---
 
-**致谢**：本项目在 [singbox-lite](https://github.com/0xdabiaoge/singbox-lite) 的基础上进行了深度重构与功能演进。
+### 设计哲学：极简主义与卓越性能
+
+在云计算的边缘地带，每一兆字节的内存都至关重要。Singbox Maker Z 针对 128MB 甚至更低规格的 VPS 进行了底层优化，确保系统保持绝对的静默与稳定。
+
+#### 1. 模块化工程架构 (Modular Engineering)
+
+项目采用分层架构设计，确保了系统的可维护性与扩展性：
+
+* **内核控制器 (`singbox.sh`)**：负责高层逻辑调度与交互式指令集。
+* **模块加载器 (`utils.sh`)**：实现组件的热插拔与环境兼容性注入。
+* **功能库 (`lib/`)**：涵盖网络、系统、内存及服务管理的原子化操作。
+
+#### 2. 精准资源分配 (Precision Resource Allocation)
+
+内置智能内存估算算法，通过动态计算 `GOMEMLIMIT` 强制约束核心进程，从根本上杜绝 OOM 崩溃风险。
+
+#### 3. Argo 隧道深度集成 (Advanced Argo Integration)
+
+针对 Cloudflare Argo 隧道提供了全方位的生命周期支持：
+
+<p align="center">
+<img src="pic/ARGO隧道.png" alt="Argo Tunnel Manager" width="500">
+</p>
+
+* **自愈系统 (Watchdog)**：内置分钟级链路检测机制，一旦识别断连即刻自动拉起。
+* **多模式编排**：支持无需配置的临时隧道与基于 Token 的固定商业隧道。
+
+---
+
+### 运维指南：效率驱动的交互体验
+
+#### 节点编排 (Node Orchestration)
+
+通过高度集成的指令集，管理员可以在数秒内完成复杂协议栈的构建：
+
+<p align="center">
+<img src="pic/创建节点.png" alt="Add Node Menu" width="500">
+</p>
+
+* **协议矩阵**：一键并行部署 VLESS-Reality、Hysteria2 与 TUIC v5 等主流协议。
+* **极速模式 (`sb -q`)**：自动处理端口冲突校验与 SNI 伪装。
+
+#### 定时生命周期编排 (Temporal Orchestration)
+
+赋予服务器“作息时间”，实现更高级的安全与成本管理：
+
+* **定时启停**：精确定义服务的活跃窗口（如：每天 08:30 唤醒，01:00 休眠）。
+* **静默释放**：休眠期间彻底清理内存占用与防火墙痕迹。
+
+---
+
+### 技术指标 (Technical Specifications)
+
+<p align="center">
+<img src="pic/高级设置.png" alt="Advanced Settings" width="500">
+</p>
+
+| 维度 | 规范说明 | 技术实现 |
+| --- | --- | --- |
+| **支持架构** | x86_64, arm64, armv7 | 自动架构检测 |
+| **初始化系统** | Systemd, OpenRC | 跨平台兼容层 |
+| **核心协议** | Reality, Hy2, TUIC, Argo, SS | 全协议矩阵支持 |
+| **高级设置** | 日志等级、DNS模式、IP策略 | 动态配置注入 |
+
+---
+
+### 系统目录规范
+
+* **配置路径**：`/usr/local/etc/sing-box/` (存储 JSON 配置、证书与元数据)
+* **程序路径**：`/usr/local/share/singbox-maker-z/` (存储模块化脚本组件)
+* **日志路径**：`/var/log/sing-box.log` (支持自动清理的系统日志)
+
+---
+
+**致谢**：本方案基于 [singbox-lite](https://github.com/0xdabiaoge/singbox-lite) 进行了深度重构与功能演进。
 
 
 
