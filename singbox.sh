@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
+
+# [新增] 强制补全 PATH，解决定时任务找不到 systemctl/service/pkill 的问题
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
 
 # 基础路径定义（兼容软链 sb）
 SELF_SCRIPT_PATH="$(readlink -f -- "${BASH_SOURCE[0]}")"
@@ -126,7 +129,7 @@ _sanitize_tag() {
 # 依赖安装
 _install_dependencies() {
     # 基础依赖
-    local pkgs="curl jq openssl wget procps iptables socat tar iproute2"
+    local pkgs="curl jq openssl wget procps iptables socat tar iproute2 gawk"
     
     # 根据发行版判断 cron 包名
     if command -v apk &>/dev/null; then
@@ -280,22 +283,32 @@ _start_argo_tunnel() {
         if ! kill -0 "$cf_pid" 2>/dev/null; then _error "启动失败" >&2; return 1; fi
         _success "Argo 固定隧道启动成功" >&2; return 0
     else
-        # [优化] 临时隧道：增加启动前的清理，防止端口冲突或残留进程
+        # [优化] 临时隧道
+        
+        # 1. 优先使用 gawk (兼容性更好)，如果没安装则回退到 awk
+        local awk_cmd="awk"
+        if command -v gawk >/dev/null 2>&1; then awk_cmd="gawk"; fi
+
+        # 2. 启动前的暴力清理，防止端口冲突
         pkill -f "cloudflared tunnel --url http://localhost:${target_port}" 2>/dev/null
         
-        # 使用管道过滤日志，避免 OOM
+        # 3. 启动隧道并过滤日志
+        # 注意：这里使用选定的 $awk_cmd 确保 fflush() 可用
         nohup ${CLOUDFLARED_BIN} tunnel --url "http://localhost:${target_port}" 2>&1 \
-        | awk '/trycloudflare.com/{print; fflush()}' > "${log_file}" &
+        | $awk_cmd '/trycloudflare.com/{print; fflush()}' > "${log_file}" &
         
-        local pipe_pid=$! # 注意：这里拿到的是 awk 的 PID
+        local pipe_pid=$! 
         echo "$pipe_pid" > "${pid_file}"
         
         local tunnel_domain=""; local wait_count=0
         while [ $wait_count -lt 30 ]; do
             sleep 2; wait_count=$((wait_count + 2))
             
-            # 检查管道进程是否存活
-            if ! kill -0 "$pipe_pid" 2>/dev/null; then return 1; fi
+            # 监控管道进程 (awk) 是否存活
+            if ! kill -0 "$pipe_pid" 2>/dev/null; then 
+                # 如果 awk 死了，说明 cloudflared 也挂了（或者语法错误）
+                return 1 
+            fi
             
             if [ -s "${log_file}" ]; then
                 tunnel_domain=$(grep -o 'https://[a-zA-Z0-9-]*\.trycloudflare\.com' "${log_file}" 2>/dev/null | tail -1 | sed 's|https://||')
@@ -309,9 +322,8 @@ _start_argo_tunnel() {
             echo "$tunnel_domain"
             return 0
         else 
-            # [关键优化] 启动失败时的精确清理
-            kill "$pipe_pid" 2>/dev/null # 杀掉 awk
-            # 额外杀掉对应的 cloudflared 进程，防止它失去管道后变成僵尸
+            # 启动失败清理
+            kill "$pipe_pid" 2>/dev/null
             pkill -f "cloudflared tunnel --url http://localhost:${target_port}" 2>/dev/null
             return 1
         fi
