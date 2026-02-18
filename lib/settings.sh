@@ -31,7 +31,7 @@ _get_current_strategy() {
 
 # --- 功能函数 ---
 
-# 1. 日志设置
+# 01. 日志设置
 _setting_log() {
     local current=$(_get_current_log_level)
     echo -e " ${CYAN}   日志配置  ${NC}"
@@ -48,12 +48,12 @@ _setting_log() {
     read -p "请选择[01-04]: " level_c
 
     local level="error"
-    case $level_c in
+    case "$level_c" in
         2|02) level="warn" ;;
         3|03) level="info" ;;
         4|04) level="debug" ;;
         1|01) level="error" ;;
-        0|00) return ;;  # 统一退出
+        0|00) return ;;  
         *) echo -e "${RED}无效输入${NC}"; sleep 1; return ;;
     esac
 
@@ -65,7 +65,7 @@ _setting_log() {
     [[ "$r" == "y" || "$r" == "Y" ]] && _manage_service "restart"
 }
 
-# 2. DNS 设置
+# 02. DNS 设置
 _setting_dns() {
     local current=$(_get_current_dns_group)
     echo -e " ${CYAN}   DNS 策略配置  ${NC}"
@@ -82,11 +82,11 @@ _setting_dns() {
     read -p "请选择[01-02]: " dns_c
     
     local dns_json=""
-    case $dns_c 在
+    case "$dns_c" in
         2|02) # 国内组
             dns_json='{
                 "servers": [
-                    {"输入": "udp", "tag": "bootstrap-cn", "server": "223.5.5.5", "server_port": 53},
+                    {"type": "udp", "tag": "bootstrap-cn", "server": "223.5.5.5", "server_port": 53},
                     {"type": "https", "tag": "dns", "server": "dns.alidns.com", "path": "/dns-query", "domain_resolver": "bootstrap-cn"},
                     {"type": "https", "tag": "doh-tencent", "server": "doh.pub", "path": "/dns-query", "domain_resolver": "bootstrap-cn"}
                 ]
@@ -119,7 +119,7 @@ _setting_dns() {
     [[ "$r" == "y" || "$r" == "Y" ]] && _manage_service "restart"
 }
 
-# 3. 出站/路由策略设置
+# 03. 出站/路由策略设置
 _setting_strategy() {
     local current=$(_get_current_strategy)
     echo -e " ${CYAN}   IP 出站策略   ${NC}"
@@ -136,7 +136,7 @@ _setting_strategy() {
     read -p "请选择[01-04]: " s_c
     
     local strategy="prefer_ipv6"
-    case $s_c 在
+    case "$s_c" in
         2|02) strategy="prefer_ipv4" ;;
         3|03) strategy="ipv4_only" ;;
         4|04) strategy="ipv6_only" ;;
@@ -164,9 +164,8 @@ _setting_strategy() {
     [[ "$r" == "y" || "$r" == "Y" ]] && _manage_service "restart"
 }
 
-# 4. 高级设置子菜单
+# 04. 高级设置子菜单
 _advanced_menu() {
-    # 局部颜色定义
     local CYAN='\033[0;36m'
     local WHITE='\033[1;37m'
     local GREY='\033[0;37m'
@@ -176,7 +175,6 @@ _advanced_menu() {
     local NC='\033[0m'
     
     while true; do
-        # 实时获取状态
         local s_log=$(_get_current_log_level)
         local s_dns=$(_get_current_dns_group)
         local s_str=$(_get_current_strategy)
@@ -195,7 +193,7 @@ _advanced_menu() {
         echo -e "\n"
         
         read -e -p "  请输入选项 > " choice
-        case $choice in
+        case "$choice" in
             1|01) _setting_log ;;
             2|02) _setting_dns ;;
             3|03) _setting_strategy ;;
