@@ -19,11 +19,28 @@
 
 ### 交互式安装（推荐）
 
-自动识别系统环境并安装至 `/usr/local/bin/sb`：
+## 安装 / 更新（推荐）
+
+模块化版本包含多个文件（`singbox.sh`、`utils.sh`、`lib/`），不再推荐仅下载单个脚本。
+
+一键安装 / 覆盖更新：
 
 ```bash
-(curl -LfsS https://raw.githubusercontent.com/Zzz-IT/-Singbox-Maker-Z/main/singbox.sh -o /usr/local/bin/sb || wget -q https://raw.githubusercontent.com/Zzz-IT/-Singbox-Maker-Z/main/singbox.sh -O /usr/local/bin/sb) && chmod +x /usr/local/bin/sb && sb
+curl -fsSL https://raw.githubusercontent.com/Zzz-IT/-Singbox-Maker-Z/main/install.sh | bash
 ```
+
+运行：
+
+```bash
+sb
+```
+
+卸载：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Zzz-IT/-Singbox-Maker-Z/main/uninstall.sh | bash
+```
+
 ### ⚡ 快速部署
 
 安装完成后，输入以下指令即可自动部署 **VLESS-Reality**、**Hysteria2**、**TUICv5** 三节点：
@@ -72,6 +89,7 @@ sb -q
 ---
 
 <p align="center">Made with ❤️ by Zzz-IT</p>
+
 
 
 
