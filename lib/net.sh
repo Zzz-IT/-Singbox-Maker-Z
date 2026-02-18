@@ -7,9 +7,13 @@ _get_public_ip() {
     fi
 
     local ip=""
-    ip=$(timeout 5 curl -s4 --max-time 2 icanhazip.com 2>/dev/null || timeout 5 curl -s4 --max-time 2 ipinfo.io/ip 2>/dev/null || true)
+    # [优化] 使用 --max-time 替代系统级 timeout 命令
+    # 尝试 IPv4
+    ip=$(curl -s4 --max-time 3 icanhazip.com 2>/dev/null || curl -s4 --max-time 3 ipinfo.io/ip 2>/dev/null || true)
+    
+    # 尝试 IPv6
     if [[ -z "$ip" ]]; then
-        ip=$(timeout 5 curl -s6 --max-time 2 icanhazip.com 2>/dev/null || timeout 5 curl -s6 --max-time 2 ipinfo.io/ip 2>/dev/null || true)
+        ip=$(curl -s6 --max-time 3 icanhazip.com 2>/dev/null || curl -s6 --max-time 3 ipinfo.io/ip 2>/dev/null || true)
     fi
 
     export GLOBAL_SERVER_IP="$ip"
