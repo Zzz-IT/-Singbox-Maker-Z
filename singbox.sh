@@ -813,6 +813,15 @@ _atomic_modify_json() {
     return 1
 }
 
+# --- [新增] 补充缺失的 YAML 读取函数 ---
+_get_proxy_field() {
+    local name="$1"
+    local field="$2"
+    [ -z "$name" ] && return
+    # 使用 yq 从 clash.yaml 提取特定字段
+    PROXY_NAME="$name" ${YQ_BINARY} eval ".proxies[] | select(.name == env(PROXY_NAME)) | $field" "$CLASH_YAML_FILE" | head -1
+}
+
 _add_node_to_yaml() {
     local j="$1"; local n=$(echo "$j" | jq -r .name)
     _atomic_modify_yaml "$CLASH_YAML_FILE" ".proxies |= . + [$j] | .proxies |= unique_by(.name)"
@@ -971,7 +980,8 @@ _add_hysteria2() {
         done
         multi+="]"; _atomic_modify_json "$CONFIG_FILE" ".inbounds += $multi | .inbounds |= unique_by(.tag)" || return 1
     fi
-    local meta=$(jq -n --arg op "$obfs_password" --arg hop "$port_hopping" --arg nm "$name" '{name:$nm} | if $op != "" then .obfsPassword = $op else . end | if $hop != "" then .portHopping = $hop else . end')
+    # [优化] 增加 --arg sn "$server_name" 并保存到 JSON
+    local meta=$(jq -n --arg op "$obfs_password" --arg hop "$port_hopping" --arg nm "$name" --arg sn "$server_name" '{name:$nm, server_name:$sn} | if $op != "" then .obfsPassword = $op else . end | if $hop != "" then .portHopping = $hop else . end')
     _atomic_modify_json "$METADATA_FILE" ". + {\"$tag\": $meta}" || return 1
     local proxy=$(jq -n --arg n "$name" --arg s "$node_ip" --arg p "$port" --arg pw "$password" --arg sn "$server_name" --arg op "$obfs_password" --arg hop "$port_hopping" '{"name": $n, "type": "hysteria2", "server": $s, "port": ($p|tonumber), "password": $pw, "sni": $sn, "skip-cert-verify": true, "alpn": ["h3"], "up": "500 Mbps", "down": "500 Mbps"} | if $op != "" then .obfs = "salamander" | .["obfs-password"] = $op else . end | if $hop != "" then .ports = $hop else . end')
     _add_node_to_yaml "$proxy"; _success "Hysteria2 节点 [${name}] 添加成功"; _show_node_link "hysteria2" "$name" "$link_ip" "$port" "$password" "$server_name" "$obfs_password" "$port_hopping"
@@ -1031,11 +1041,11 @@ _add_socks() {
 
 _view_nodes() {
     if ! jq -e '.inbounds | length > 0' "$CONFIG_FILE" >/dev/null 2>&1; then _warning "无节点"; return; fi
-    _info "--- 节点信息 (普通节点) ---"
+    _info "节点信息 (普通节点)"
     rm -f /tmp/singbox_links.tmp
     jq -c '.inbounds[]' "$CONFIG_FILE" | while read -r node; do
         local tag=$(echo "$node" | jq -r '.tag'); 
-        # [修改] 双重过滤 Argo 节点
+        # 双重过滤 Argo 节点
         if [[ "$tag" == *"-hop-"* ]] || [[ "$tag" == "argo_"* ]]; then continue; fi
         if [ -f "$ARGO_METADATA_FILE" ] && jq -e ".\"$tag\"" "$ARGO_METADATA_FILE" >/dev/null 2>&1; then continue; fi
         
@@ -1061,7 +1071,14 @@ _view_nodes() {
                       url="trojan://${pw}@${link_ip}:${port}?security=tls&type=ws&host=${sn}&path=$(_url_encode "$path")&sni=${sn}#$(_url_encode "$dn")"
                  else local sn=$(_get_proxy_field "$pn" ".sni"); url="trojan://${pw}@${link_ip}:${port}?security=tls&type=tcp&sni=${sn}#$(_url_encode "$dn")"; fi ;;
             "hysteria2")
-                 local pw=$(echo "$node" | jq -r '.users[0].password'); local sn=$(echo "$node" | jq -r '.tls.server_name'); local meta=$(jq -r --arg t "$tag" '.[$t]' "$METADATA_FILE")
+                 local pw=$(echo "$node" | jq -r '.users[0].password'); 
+                 local sn=$(echo "$node" | jq -r '.tls.server_name'); 
+                 local meta=$(jq -r --arg t "$tag" '.[$t]' "$METADATA_FILE")
+                 
+                 # [修复] 如果 config 中没有 SNI，尝试从 metadata 或 clash 配置文件中读取
+                 if [[ -z "$sn" || "$sn" == "null" ]]; then sn=$(echo "$meta" | jq -r '.server_name // empty'); fi
+                 if [[ -z "$sn" || "$sn" == "null" ]]; then sn=$(_get_proxy_field "$pn" ".sni"); fi
+                 
                  local op=$(echo "$meta" | jq -r '.obfsPassword'); local obfs_param=""; [[ -n "$op" && "$op" != "null" ]] && obfs_param="&obfs=salamander&obfs-password=${op}"; local hop=$(echo "$meta" | jq -r '.portHopping // empty'); local hop_param=""; [[ -n "$hop" && "$hop" != "null" ]] && hop_param="&mport=${hop}"
                  url="hysteria2://${pw}@${link_ip}:${port}?sni=${sn}&insecure=1${obfs_param}${hop_param}#$(_url_encode "$dn")" ;;
             "tuic") local u=$(echo "$node" | jq -r '.users[0].uuid'); local pw=$(echo "$node" | jq -r '.users[0].password'); local sn=$(echo "$node" | jq -r '.tls.server_name'); url="tuic://${u}:${pw}@${link_ip}:${port}?sni=${sn}&alpn=h3&congestion_control=bbr&udp_relay_mode=native&allow_insecure=1#$(_url_encode "$dn")" ;;
