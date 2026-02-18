@@ -213,3 +213,56 @@ _advanced_menu() {
         esac
     done
 }
+# --- 自动填充默认设置 (非交互式) ---
+# 该函数由主脚本在初始化时调用，用于修复缺失的关键配置
+
+_check_and_fill_defaults() {
+    local modified=false
+
+    # 1. 检查 Log 配置 (默认: Error)
+    if ! jq -e '.log' "$CONFIG_FILE" >/dev/null 2>&1; then
+        local default_log='{"level": "error", "timestamp": false}'
+        _atomic_modify_json "$CONFIG_FILE" ".log = $default_log"
+        _info "已自动应用默认日志设置: Error"
+        modified=true
+    fi
+
+    # 2. 检查 DNS 配置 (默认: 国外优先 - 复用 _setting_dns 选项 01 的配置)
+    if ! jq -e '.dns' "$CONFIG_FILE" >/dev/null 2>&1; then
+        local default_dns='{
+            "servers": [
+                {"type": "udp", "tag": "bootstrap-v4", "server": "1.1.1.1", "server_port": 53},
+                {"type": "https", "tag": "dns", "server": "cloudflare-dns.com", "path": "/dns-query", "domain_resolver": "bootstrap-v4"},
+                {"type": "https", "tag": "doh-google", "server": "dns.google", "path": "/dns-query", "domain_resolver": "bootstrap-v4"},
+                {"type": "https", "tag": "doh-quad9", "server": "dns.quad9.net", "path": "/dns-query", "domain_resolver": "bootstrap-v4"}
+            ]
+        }'
+        _atomic_modify_json "$CONFIG_FILE" ".dns = $default_dns"
+        _info "已自动应用默认 DNS 设置: 国外优先"
+        modified=true
+    fi
+
+    # 3. 检查 Route 基础结构
+    if ! jq -e '.route' "$CONFIG_FILE" >/dev/null 2>&1; then
+         _atomic_modify_json "$CONFIG_FILE" '.route = {"final": "direct", "auto_detect_interface": true}'
+         modified=true
+    fi
+
+    # 4. 检查 Route 策略 (默认: 优先 IPv6)
+    if ! jq -e '.route.rules[] | select(.action == "resolve")' "$CONFIG_FILE" >/dev/null 2>&1; then
+        local default_strategy='{
+            "action": "resolve",
+            "strategy": "prefer_ipv6",
+            "disable_cache": false
+        }'
+        # 将默认策略插入到 rules 数组的最前面
+        _atomic_modify_json "$CONFIG_FILE" ".route.rules = [$default_strategy] + (.route.rules // [])"
+        _atomic_modify_json "$CONFIG_FILE" '.route.default_domain_resolver = "dns"'
+        _info "已自动应用默认路由策略: 优先 IPv6"
+        modified=true
+    fi
+
+    if [ "$modified" = true ]; then
+        _success "核心配置自检完成: 已补全缺失的默认设置"
+    fi
+}
