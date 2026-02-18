@@ -3,7 +3,7 @@
 **全新重构的Singbox部署管理器：轻量级、模块化与全托管的完美平衡**
 
 <p align="left">
-<img src="pic/主菜单.png" alt="Network Dashboard Preview" width="400">
+<img src="pic/主菜单.png" alt="Network Dashboard Preview" width="360">
 </p>
 
 Singbox Maker Z 是一个专注于资源受限环境下的高可用流量代理编排方案。它不只是简单的安装脚本，而是一套严谨的、采用模块化架构设计的服务管理框架。
@@ -31,7 +31,7 @@ Singbox Maker Z 是一个专注于资源受限环境下的高可用流量代理�
 针对 Cloudflare Argo 隧道提供了全方位的生命周期支持：
 
 <p align="left">
-<img src="pic/ARGO隧道.png" alt="Argo Tunnel Manager" width="400">
+<img src="pic/ARGO隧道.png" alt="Argo Tunnel Manager" width="370">
 </p>
 
 * **自愈系统 (Watchdog)**：内置分钟级链路检测机制，一旦识别断连即刻自动拉起。
@@ -46,7 +46,7 @@ Singbox Maker Z 是一个专注于资源受限环境下的高可用流量代理�
 通过高度集成的指令集，管理员可以在数秒内完成复杂协议栈的构建：
 
 <p align="left">
-<img src="pic/创建节点.png" alt="Add Node Menu" width="400">
+<img src="pic/创建节点.png" alt="Add Node Menu" width="396">
 </p>
 
 * **协议矩阵**：一键并行部署 VLESS-Reality、Hysteria2 与 TUIC v5 等主流协议。
@@ -60,7 +60,7 @@ Singbox Maker Z 是一个专注于资源受限环境下的高可用流量代理�
 * **静默释放**：休眠期间彻底清理内存占用与防火墙痕迹。
 
 <p align="left">
-<img src="pic/高级设置.png" alt="Advanced Settings" width="400">
+<img src="pic/高级设置.png" alt="Advanced Settings" width="380">
 </p>
 
 ---
@@ -87,6 +87,7 @@ Singbox Maker Z 是一个专注于资源受限环境下的高可用流量代理�
 ---
 
 **致谢**：本方案基于 [singbox-lite](https://github.com/0xdabiaoge/singbox-lite) 进行了深度重构与功能演进。
+
 
 
 
