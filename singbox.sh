@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-
-# [新增] 强制补全 PATH，解决定时任务找不到 systemctl/service/pkill 的问题
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 
@@ -340,25 +338,30 @@ _stop_argo_tunnel() {
 }
 
 _stop_all_argo_tunnels() {
-    # 1. 尝试通过 PID 文件优雅停止
-    for pid_file in /tmp/singbox_argo_*.pid; do
-        [ -e "$pid_file" ] || continue
-        local port=${pid_file#*argo_}; port=${port%.pid}; _stop_argo_tunnel "$port"
+    _info "正在停止所有 Argo 隧道..."
+    
+    # 1. 清理 PID 文件 (防止下次误判)
+    rm -f /tmp/singbox_argo_*.pid /tmp/singbox_argo_*.log 2>/dev/null
+    
+    # 2. 暴力强杀所有 cloudflared 进程
+    # 尝试 pkill (匹配全名)
+    if command -v pkill >/dev/null 2>&1; then
+        pkill -f "cloudflared" 2>/dev/null || true
+    fi
+    
+    # 尝试 killall (匹配进程名)
+    if command -v killall >/dev/null 2>&1; then
+        killall cloudflared 2>/dev/null || true
+    fi
+    
+    # 3. 兜底检查：如果还有残留，使用 kill -9 逐个点名
+    # 解决部分顽固僵尸进程杀不掉的问题
+    for pid in $(pgrep -f "cloudflared"); do
+        kill -9 "$pid" 2>/dev/null || true
     done
     
-    # 2. [增强] 暴力兜底：强制清理所有残留的 cloudflared
-    # 这里的路径已经是全路径，但在 Cron 里保险起见还是用 path 里的 pkill
-    if command -v pkill >/dev/null 2>&1; then
-        pkill -f "cloudflared" 2>/dev/null
-        sleep 1
-        # 如果还在运行，直接 kill -9
-        pkill -9 -f "cloudflared" 2>/dev/null
-    else
-        # 兼容没有 pkill 的系统
-        killall -9 cloudflared 2>/dev/null
-    fi
+    _success "所有 Argo 隧道已停止。"
 }
-
 _add_argo_vless_ws() {
     _info " 创建 VLESS-WS + Argo 隧道节点 "
     _install_cloudflared || return 1
@@ -616,20 +619,13 @@ _stop_argo_menu() { _stop_all_argo_tunnels; _success "已停止所有隧道"; }
 _argo_keepalive() {
     local lock="/tmp/singbox_keepalive.lock"
     
-    # [优化] 锁机制增强：
-    # 1. 检查锁文件是否存在
-    # 2. 检查 PID 是否存在
-    # 3. [新增] 检查进程名是否匹配 (防止 PID 复用导致的误判)
+    # 锁机制：防止重复执行
     if [ -f "$lock" ]; then
         local lock_pid=$(cat "$lock" 2>/dev/null)
         if [ -n "$lock_pid" ] && kill -0 "$lock_pid" 2>/dev/null; then
-             # 读取进程命令行，确认是否真的是 singbox.sh 或 bash 进程
-             # 注意：Alpine 下 ps 输出可能不同，直接读 /proc 最稳妥
              if grep -qE "singbox\.sh|bash|sb" "/proc/$lock_pid/cmdline" 2>/dev/null; then
                  return
              fi
-             # 如果走到这里，说明 PID 存在但不是本脚本 (PID 复用)，视为锁失效，继续向下执行清理
-             _warn "检测到僵尸锁 (PID $lock_pid 非本脚本)，正在自动清理..."
         fi
         rm -f "$lock"
     fi
@@ -638,8 +634,11 @@ _argo_keepalive() {
     
     [ ! -f "$ARGO_METADATA_FILE" ] && return
     
-    local tags=$(jq -r 'keys[]' "$ARGO_METADATA_FILE")
-    for tag in $tags; do
+    # [关键修复] 使用 while read 替代 for 循环，防止因节点名特殊字符导致的循环中断
+    # [关键修复] 增加 || true 确保单个节点失败不影响整体
+    while IFS= read -r tag; do
+        [ -z "$tag" ] && continue
+        
         local port=$(jq -r ".\"$tag\".local_port" "$ARGO_METADATA_FILE")
         local type=$(jq -r ".\"$tag\".type" "$ARGO_METADATA_FILE")
         local token=$(jq -r ".\"$tag\".token // empty" "$ARGO_METADATA_FILE")
@@ -647,10 +646,10 @@ _argo_keepalive() {
         
         local need_restart=true
         
+        # 检查进程是否存活
         if [ -f "$pid_file" ]; then
             local pid=$(cat "$pid_file")
             if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-                # 保持原有的 Argo 进程检查逻辑 (这里已经写得很好了)
                 if grep -q "cloudflared" "/proc/$pid/cmdline" 2>/dev/null || \
                    grep -q "cloudflared" "/proc/$pid/comm" 2>/dev/null; then
                     need_restart=false
@@ -660,14 +659,18 @@ _argo_keepalive() {
 
         if [ "$need_restart" = true ]; then
             _warn "检测到 Argo 隧道 (端口 $port) 断开，正在重连..."
+            
             if [ "$type" == "fixed" ]; then 
-                _start_argo_tunnel "$port" "fixed" "$token"
+                _start_argo_tunnel "$port" "fixed" "$token" || true
             else 
+                # 临时隧道启动
                 local d=$(_start_argo_tunnel "$port" "temp")
-                [ -n "$d" ] && _atomic_modify_json "$ARGO_METADATA_FILE" ".\"$tag\".domain = \"$d\""
+                if [ -n "$d" ]; then
+                     _atomic_modify_json "$ARGO_METADATA_FILE" ".\"$tag\".domain = \"$d\"" || true
+                fi
             fi
         fi
-    done
+    done < <(jq -r 'keys[]' "$ARGO_METADATA_FILE")
 }
 _enable_argo_watchdog() { local j="* * * * * bash ${SELF_SCRIPT_PATH} keepalive >/dev/null 2>&1"; ! crontab -l 2>/dev/null | grep -Fq "$j" && (crontab -l 2>/dev/null; echo "$j") | crontab -; }
 _disable_argo_watchdog() { local j="bash ${SELF_SCRIPT_PATH} keepalive"; crontab -l 2>/dev/null | grep -Fv "$j" | crontab -; }
