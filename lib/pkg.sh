@@ -4,10 +4,10 @@ _pkg_install() {
     local pkgs="$*"
     [[ -z "$pkgs" ]] && return 0
 
-    # 超时时间设置为 300秒 (5分钟)
+    # 默认超时 300秒 (5分钟)
     local TIMEOUT_CMD="timeout 300"
     
-    # 检查 timeout 命令是否存在，不存在则不使用
+    # 检查 timeout 命令是否存在，不存在则清空变量，避免报错
     if ! command -v timeout >/dev/null 2>&1; then
         TIMEOUT_CMD=""
     fi
