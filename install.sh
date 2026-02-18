@@ -7,7 +7,15 @@ BRANCH="main"
 INSTALL_DIR="/usr/local/share/singbox-maker-z"
 BIN_LINK="/usr/local/bin/sb"
 
-have_cmd() { command -v "$1" >/dev/null 2>&1; }
+tmp_dir=""  # 给 -u 一个安全默认值，避免未定义
+
+cleanup() {
+  # tmp_dir 可能为空（比如下载工具不存在时提前退出），这里要安全处理
+  if [[ -n "${tmp_dir}" && -d "${tmp_dir}" ]]; then
+    rm -rf -- "${tmp_dir}"
+  fi
+}
+trap cleanup EXIT
 
 need_root() {
   if [[ ${EUID:-$(id -u)} -ne 0 ]]; then
@@ -15,6 +23,8 @@ need_root() {
     exit 1
   fi
 }
+
+have_cmd() { command -v "$1" >/dev/null 2>&1; }
 
 download() {
   local url="$1"
@@ -33,33 +43,24 @@ download() {
 main() {
   need_root
 
-  local tmp
-  tmp="$(mktemp -d)"
-  trap 'rm -rf -- "$tmp"' EXIT
+  tmp_dir="$(mktemp -d)"
 
-  # 使用 GitHub 源码归档下载（无需 releases/tag）
   local tar_url="https://github.com/${REPO}/archive/refs/heads/${BRANCH}.tar.gz"
-  local tar_file="${tmp}/src.tar.gz"
+  local tar_file="${tmp_dir}/src.tar.gz"
   download "$tar_url" "$tar_file"
 
-  tar -xzf "$tar_file" -C "$tmp"
+  tar -xzf "$tar_file" -C "$tmp_dir"
 
-  local src_dir="${tmp}/-Singbox-Maker-Z-${BRANCH}"
+  local src_dir="${tmp_dir}/-Singbox-Maker-Z-${BRANCH}"
 
-  # 必要文件校验（模块化版本）
-  for f in singbox.sh utils.sh; do
-    [[ -f "${src_dir}/${f}" ]] || { echo "缺少文件：${f}（请检查仓库内容）" >&2; exit 1; }
-  done
-  [[ -d "${src_dir}/lib" ]] || { echo "缺少目录：lib/（模块化版本必须）" >&2; exit 1; }
+  # 校验必需文件/目录（模块化必须有 lib）
+  [[ -f "${src_dir}/singbox.sh" ]] || { echo "缺少文件：singbox.sh（请检查仓库）" >&2; exit 1; }
+  [[ -f "${src_dir}/utils.sh" ]]   || { echo "缺少文件：utils.sh（请检查仓库）" >&2; exit 1; }
+  [[ -d "${src_dir}/lib" ]]        || { echo "缺少目录：lib/（请检查仓库）" >&2; exit 1; }
 
-  # 原子覆盖安装：先复制到临时目录，再整体替换
-  local new_dir="${tmp}/install.new"
+  local new_dir="${tmp_dir}/install.new"
   mkdir -p "$new_dir"
-
-  # 只安装运行所需文件（避免把仓库杂项装进系统）
-  cp -a "${src_dir}/singbox.sh" "$new_dir/"
-  cp -a "${src_dir}/utils.sh" "$new_dir/"
-  cp -a "${src_dir}/lib" "$new_dir/"
+  cp -a "${src_dir}/." "$new_dir/"
 
   # 备份旧安装（可选）
   if [[ -d "$INSTALL_DIR" ]]; then
@@ -72,10 +73,6 @@ main() {
   mv "$new_dir" "$INSTALL_DIR"
 
   chmod +x "${INSTALL_DIR}/singbox.sh"
-  chmod +x "${INSTALL_DIR}/utils.sh" || true
-  chmod +x "${INSTALL_DIR}/lib"/*.sh || true
-
-  # sb 作为入口：软链到安装目录的 singbox.sh
   ln -sf "${INSTALL_DIR}/singbox.sh" "$BIN_LINK"
 
   echo "安装完成：${BIN_LINK} -> ${INSTALL_DIR}/singbox.sh"
