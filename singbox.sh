@@ -1539,7 +1539,7 @@ _main_menu() {
             if pgrep -f "cloudflared" >/dev/null 2>&1; then 
                 argo_status="${GREEN}● Running${NC}"
             else 
-                argo_status="${YELLOW}● Stopped${NC}"
+                argo_status="${RED}● Stopped${NC}"
             fi
         fi
 
