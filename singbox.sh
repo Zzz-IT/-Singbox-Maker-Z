@@ -1,42 +1,53 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # 基础路径定义
-SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
-SINGBOX_DIR="/usr/local/etc/sing-box"
-GITHUB_RAW_BASE="https://raw.githubusercontent.com/Zzz-IT/-Singbox-Maker-Z/main"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 
+# 运行时目录（脚本安装目录）
+INSTALL_DIR_DEFAULT="/usr/local/share/singbox-maker-z"
+
+# 业务数据目录（保持与旧版一致）
+SINGBOX_DIR="/usr/local/etc/sing-box"
+
+# 线上仓库（用于缺失组件补全/更新）
+GITHUB_RAW_BASE="https://raw.githubusercontent.com/Zzz-IT/-Singbox-Maker-Z/main"
 SCRIPT_UPDATE_URL="${GITHUB_RAW_BASE}/singbox.sh"
 
-# --- 核心组件自动补全函数 ---
+# --- 核心组件自动补全函数（仅在缺文件时触发） ---
 _download_missing_component() {
     local name="$1"
     local target="$2"
-    echo "检测到缺失核心组件: $name，正在尝试自动补全..."
-    if command -v curl &>/dev/null; then
-        curl -LfSs "$GITHUB_RAW_BASE/$name" -o "$target"
-    elif command -v wget &>/dev/null; then
-        wget -qO "$target" "$GITHUB_RAW_BASE/$name"
+
+    printf '%s\n' "检测到缺失核心组件: ${name}，正在尝试自动补全..." >&2
+
+    if command -v curl >/dev/null 2>&1; then
+        curl -LfSs "${GITHUB_RAW_BASE}/${name}" -o "${target}"
+    elif command -v wget >/dev/null 2>&1; then
+        wget -qO "${target}" "${GITHUB_RAW_BASE}/${name}"
     else
-        echo "错误: 未找到 curl 或 wget，无法自动补全缺失组件。"
+        printf '%s\n' "错误: 未找到 curl 或 wget，无法自动补全缺失组件。" >&2
         exit 1
     fi
-    [ -f "$target" ] && chmod +x "$target"
+
+    [[ -f "${target}" ]] && chmod +x "${target}"
 }
 
 # --- 引入工具库 ---
-if [ -f "$SCRIPT_DIR/utils.sh" ]; then
-    source "$SCRIPT_DIR/utils.sh"
-elif [ -f "${SINGBOX_DIR}/utils.sh" ]; then
-    source "${SINGBOX_DIR}/utils.sh"
+# 约定：
+# 1) 同目录优先（源码运行）
+# 2) 安装目录兜底（/usr/local/share/singbox-maker-z）
+# 3) 都没有则尝试在线补全到安装目录
+if [[ -f "${SCRIPT_DIR}/utils.sh" ]]; then
+    # shellcheck source=/dev/null
+    source "${SCRIPT_DIR}/utils.sh"
+elif [[ -f "${INSTALL_DIR_DEFAULT}/utils.sh" ]]; then
+    # shellcheck source=/dev/null
+    source "${INSTALL_DIR_DEFAULT}/utils.sh"
 else
-    mkdir -p "${SINGBOX_DIR}"
-    _download_missing_component "utils.sh" "${SINGBOX_DIR}/utils.sh"
-    if [ -f "${SINGBOX_DIR}/utils.sh" ]; then
-        source "${SINGBOX_DIR}/utils.sh"
-    else
-        echo "错误: 核心组件 utils.sh 缺失且自动补全失败。"
-        exit 1
-    fi
+    mkdir -p "${INSTALL_DIR_DEFAULT}"
+    _download_missing_component "utils.sh" "${INSTALL_DIR_DEFAULT}/utils.sh"
+    # shellcheck source=/dev/null
+    source "${INSTALL_DIR_DEFAULT}/utils.sh"
 fi
 
 # 文件路径常量
@@ -58,14 +69,18 @@ SERVICE_FILE=""
 QUICK_DEPLOY_MODE=false
 
 # 脚本全路径与 PID
-SELF_SCRIPT_PATH=$(readlink -f "$0")
+SELF_SCRIPT_PATH="$(readlink -f -- "${BASH_SOURCE[0]}")"
 PID_FILE="/var/run/singbox_manager.pid"
 
 # 脚本版本 (仅内部记录)
 SCRIPT_VERSION="12-Scheduled-Lifecycle"
 
-# 捕获退出信号
-trap 'rm -f ${SINGBOX_DIR}/*.tmp /tmp/singbox_links.tmp' EXIT
+# 退出清理（更稳健的写法）
+_cleanup_tmp() {
+    rm -f -- /tmp/singbox_links.tmp 2>/dev/null || true
+    rm -f -- "${SINGBOX_DIR}"/*.tmp 2>/dev/null || true
+}
+trap _cleanup_tmp EXIT
 
 # --- Tag 净化函数 ---
 _sanitize_tag() {
