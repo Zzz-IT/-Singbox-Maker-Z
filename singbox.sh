@@ -1519,7 +1519,7 @@ _scheduled_lifecycle_menu() {
     fi
 }
 _main_menu() {
-    # 局部颜色定义，防止污染全局变量
+    # 局部颜色定义
     local CYAN='\033[0;36m'
     local WHITE='\033[1;37m'
     local GREY='\033[0;37m'
@@ -1530,12 +1530,9 @@ _main_menu() {
 
     while true; do
         clear
-        # 顶部留白，增加呼吸感
         echo -e "\n\n"
 
-        # ----------------------------------------------------------------
-        # 1. 抬头区域 (ASCII Art)
-        # ----------------------------------------------------------------
+        # 1. 抬头区域
         echo -e "${CYAN}"
         echo '   _____ _               __                 '
         echo '  / ___/(_)___  ____    / /_  ____  _  __   '
@@ -1545,12 +1542,9 @@ _main_menu() {
         echo '             /____/         [ M A K E R  Z ] '
         echo -e "${NC}"
         
-      
         echo -e "      ${CYAN}N E T W O R K   D A S H B O A R D${NC}"
         
-        # ----------------------------------------------------------------
-        # 2. 系统信息仪表盘 (动态获取逻辑)
-        # ----------------------------------------------------------------
+        # 2. 系统信息仪表盘
         local os_info="Unknown"
         if [ -f /etc/os-release ]; then
             os_info=$(grep -E "^PRETTY_NAME=" /etc/os-release 2>/dev/null | cut -d'"' -f2 | head -1)
@@ -1558,7 +1552,6 @@ _main_menu() {
         fi
         [ -z "$os_info" ] && os_info=$(uname -s)
 
-        # 状态判定逻辑
         local service_status="${RED}● Stopped${NC}"
         if [ "$INIT_SYSTEM" == "systemd" ]; then
             systemctl is-active --quiet sing-box 2>/dev/null && service_status="${GREEN}● Running${NC}"
@@ -1575,16 +1568,13 @@ _main_menu() {
             fi
         fi
 
-        # 仪表盘显示区 (分割线与状态)
         echo -e "  ${GREY}───────────────────────────────────────────${NC}"
         echo -e "   ${CYAN}SYSTEM:${NC} ${WHITE}${os_info}${NC}"
         echo -e "   ${CYAN}CORE  :${NC} ${service_status}      ${CYAN}ARGO  :${NC} ${argo_status}"
         echo -e "  ${GREY}───────────────────────────────────────────${NC}"
         echo -e ""
 
-        # ----------------------------------------------------------------
-        # 3. 菜单选项区 (双列布局，简洁对齐)
-        # ----------------------------------------------------------------
+        # 3. 菜单选项区
         
         # --- 节点管理 ---
         echo -e "    ${CYAN}NODE MANAGER${NC}"
@@ -1597,21 +1587,19 @@ _main_menu() {
         echo -e "    ${CYAN}SERVICE CONTROL${NC}"
         echo -e "    ${WHITE}06.${NC} 重启服务            ${WHITE}07.${NC} 停止服务"
         echo -e "    ${WHITE}08.${NC} 运行状态            ${WHITE}09.${NC} 实时日志"
-        echo -e "    ${WHITE}10.${NC} 定时启停 "
+        echo -e "    ${WHITE}10.${NC} 定时启停            ${WHITE}11.${NC} 高级配置 ${YELLOW}(NEW)${NC}" 
         echo -e ""
 
         # --- 维护与更新 ---
         echo -e "    ${CYAN}MAINTENANCE${NC}"
-        echo -e "    ${WHITE}11.${NC} 检查配置            ${WHITE}12.${NC} 更新脚本"
-        echo -e "    ${WHITE}13.${NC} 更新核心            ${RED}14.${NC} 卸载脚本"
+        echo -e "    ${WHITE}12.${NC} 检查配置            ${WHITE}13.${NC} 更新脚本"
+        echo -e "    ${WHITE}14.${NC} 更新核心            ${RED}15.${NC} 卸载脚本"
         
         echo -e "\n  ${GREY}───────────────────────────────────────────${NC}"
         echo -e "    ${WHITE}00.${NC} 退出脚本"
         echo -e ""
 
-        # ----------------------------------------------------------------
-        # 4. 输入处理 (兼容 01 和 1)
-        # ----------------------------------------------------------------
+        # 4. 输入处理
         read -e -p "  请输入选项 > " choice
         case $choice in
             1|01) _show_add_node_menu ;; 
@@ -1624,20 +1612,19 @@ _main_menu() {
             8|08) _manage_service "status" ;; 
             9|09) _view_log ;; 
             10)   _scheduled_lifecycle_menu ;; 
-            11)   _check_config ;; 
-            12)   _update_script ;; 
-            13)   _update_singbox_core ;; 
-            14)   _uninstall ;;
+            11)   _advanced_menu ;;   # <--- 调用新模块的函数
+            12)   _check_config ;; 
+            13)   _update_script ;; 
+            14)   _update_singbox_core ;; 
+            15)   _uninstall ;;
             0|00) exit 0 ;;
             *)    echo -e "\n  ${GREY}无效输入，请重试...${NC}"; sleep 1 ;;
         esac
         
-        # 这里的 echo 是为了美观，防止 read -n 1 紧贴着上一行
         echo -e "" 
         read -n 1 -s -r -p "  按任意键返回主菜单..."
     done
 }
-
 # --- [优化] 运行时环境初始化 (复用库函数) ---
 _init_runtime() {
     # 1. 权限检查 (复用 utils.sh 中的 _check_root)
