@@ -833,9 +833,12 @@ _remove_node_from_yaml() {
     PROXY_NAME="$n" ${YQ_BINARY} eval '.proxy-groups[] |= (select(.name == "节点选择") | .proxies |= del(.[] | select(. == env(PROXY_NAME))))' -i "$CLASH_YAML_FILE"
 }
 
-_show_node_link() {
+# 新增函数：只负责生成 URL 字符串，不负责打印
+_gen_link_string() {
     local type="$1"; local name="$2"; local link_ip="$3"; local port="$4"; shift 4
     local url=""
+    
+    # 这里直接复用原 _show_node_link 的核心逻辑
     case "$type" in
         "vless-reality")
             local u="$1" sni="$2" pk="$3" sid="$4"
@@ -843,21 +846,44 @@ _show_node_link() {
         "vless-ws-tls")
             local u="$1" sni="$2" path="$3" sv="$4"; local iparam=""; [[ "$sv" == "true" ]] && iparam="&insecure=1"
             url="vless://${u}@${link_ip}:${port}?security=tls&encryption=none&type=ws&host=${sni}&path=$(_url_encode "$path")&sni=${sni}${iparam}#$(_url_encode "$name")" ;;
-        "vless-tcp") url="vless://${1}@${link_ip}:${port}?encryption=none&type=tcp#$(_url_encode "$name")" ;;
+        "vless-tcp") 
+            url="vless://${1}@${link_ip}:${port}?encryption=none&type=tcp#$(_url_encode "$name")" ;;
         "trojan-ws-tls")
             local p="$1" sni="$2" path="$3" sv="$4"; local iparam=""; [[ "$sv" == "true" ]] && iparam="&allowInsecure=1"
             url="trojan://${p}@${link_ip}:${port}?security=tls&type=ws&host=${sni}&path=$(_url_encode "$path")&sni=${sni}${iparam}#$(_url_encode "$name")" ;;
         "hysteria2")
             local p="$1" sni="$2" op="$3" hop="$4"; local oparam=""; [[ -n "$op" ]] && oparam="&obfs=salamander&obfs-password=${op}"; local hparam=""; [[ -n "$hop" ]] && hparam="&mport=${hop}"
             url="hysteria2://${p}@${link_ip}:${port}?sni=${sni}&insecure=1${oparam}${hparam}#$(_url_encode "$name")" ;;
-        "tuic") url="tuic://${1}:${2}@${link_ip}:${port}?sni=${3}&alpn=h3&congestion_control=bbr&udp_relay_mode=native&allow_insecure=1#$(_url_encode "$name")" ;;
+        "tuic") 
+            url="tuic://${1}:${2}@${link_ip}:${port}?sni=${3}&alpn=h3&congestion_control=bbr&udp_relay_mode=native&allow_insecure=1#$(_url_encode "$name")" ;;
         "anytls")
             local p="$1" sni="$2" sv="$3"; local iparam=""; [ "$sv" == "true" ] && iparam="&insecure=1&allowInsecure=1"
             url="anytls://${p}@${link_ip}:${port}?security=tls&sni=${sni}${iparam}&type=tcp#$(_url_encode "$name")" ;;
-        "shadowsocks") url="ss://$(_url_encode "${1}:${2}")@${link_ip}:${port}#$(_url_encode "$name")" ;;
-        "socks") echo -e "\n节点: $name | 用户: $1 | 密码: $2"; return ;;
+        "shadowsocks") 
+            url="ss://$(_url_encode "${1}:${2}")@${link_ip}:${port}#$(_url_encode "$name")" ;;
+        "socks") 
+            # socks 比较特殊，可能没有标准链接，或者保持原样返回空
+            ;;
     esac
-    if [ -n "$url" ]; then echo -e "\n${YELLOW}--- 分享链接 ---${NC}\n${CYAN}${url}${NC}"; fi
+    
+    # 关键点：只输出 URL，不输出任何颜色或标题
+    printf '%s' "$url"
+}
+
+_show_node_link() {
+    # 捕获生成的 URL
+    local url=$(_gen_link_string "$@")
+    
+    # socks 特殊处理
+    if [[ "$1" == "socks" ]]; then
+        echo -e "\n节点: $2 | 用户: $5 | 密码: $6"
+        return
+    fi
+
+    # 打印 UI 和 链接
+    if [ -n "$url" ]; then 
+        echo -e "\n${YELLOW}--- 分享链接 ---${NC}\n${CYAN}${url}${NC}"
+    fi
 }
 
 _add_vless_ws_tls() {
@@ -1040,55 +1066,140 @@ _add_socks() {
 }
 
 _view_nodes() {
-    if ! jq -e '.inbounds | length > 0' "$CONFIG_FILE" >/dev/null 2>&1; then _warning "无节点"; return; fi
+    # 1. 检查是否有节点
+    if ! jq -e '.inbounds | length > 0' "$CONFIG_FILE" >/dev/null 2>&1; then 
+        _warning "无节点"
+        return
+    fi
+    
     _info "节点信息 (普通节点)"
     rm -f /tmp/singbox_links.tmp
+
+    # 2. 遍历配置文件中的所有入站节点
     jq -c '.inbounds[]' "$CONFIG_FILE" | while read -r node; do
-        local tag=$(echo "$node" | jq -r '.tag'); 
-        # 双重过滤 Argo 节点
-        if [[ "$tag" == *"-hop-"* ]] || [[ "$tag" == "argo_"* ]]; then continue; fi
+        local tag=$(echo "$node" | jq -r '.tag')
+        
+        # --- 过滤逻辑 ---
+        # 过滤掉 Hysteria2 的端口跳跃辅助节点
+        if [[ "$tag" == *"-hop-"* ]]; then continue; fi
+        # 过滤掉 Argo 隧道节点 (Argo 有专门的管理菜单)
+        if [[ "$tag" == "argo_"* ]]; then continue; fi
         if [ -f "$ARGO_METADATA_FILE" ] && jq -e ".\"$tag\"" "$ARGO_METADATA_FILE" >/dev/null 2>&1; then continue; fi
         
-        local type=$(echo "$node" | jq -r '.type'); local port=$(echo "$node" | jq -r '.listen_port')
-        local dn=$(jq -r --arg t "$tag" '.[$t].name // empty' "$METADATA_FILE"); if [ -z "$dn" ]; then dn=$(echo "$tag" | sed "s/_${port}$//" | tr '_' ' '); fi; [ -z "$dn" ] && dn="$tag"
-        local link_ip="${server_ip}"; [[ "$server_ip" == *":"* ]] && link_ip="[$server_ip]"
-        local pn=$(${YQ_BINARY} eval '.proxies[] | select(.name == "'"$dn"'") | .name' ${CLASH_YAML_FILE} | head -1)
-        echo "──────────────────────────────────────"; _info " 节点: ${dn}"; local url=""
+        # --- 基础信息提取 ---
+        local type=$(echo "$node" | jq -r '.type')
+        local port=$(echo "$node" | jq -r '.listen_port')
+        
+        # 获取节点名称 (优先从 metadata 获取，否则处理 tag)
+        local dn=$(jq -r --arg t "$tag" '.[$t].name // empty' "$METADATA_FILE")
+        if [ -z "$dn" ]; then dn=$(echo "$tag" | sed "s/_${port}$//" | tr '_' ' '); fi
+        [ -z "$dn" ] && dn="$tag"
+        
+        # 处理 IPv6 地址格式
+        local link_ip="${server_ip}"
+        [[ "$server_ip" == *":"* ]] && link_ip="[$server_ip]"
+        
+        # 尝试从 Clash 配置中查找对应代理以获取补充信息 (如 SNI)
+        local pn=$(${YQ_BINARY} eval '.proxies[] | select(.name == "'"$dn"'") | .name' "${CLASH_YAML_FILE}" 2>/dev/null | head -1)
+
+        local url=""
+
+        # --- 协议分发与参数准备 ---
         case "$type" in
             "vless")
-                 local uuid=$(echo "$node" | jq -r '.users[0].users[0].uuid // .users[0].uuid')
-                 if [ "$(echo "$node" | jq -r '.tls.reality.enabled // false')" == "true" ]; then
-                     local meta=$(jq -r --arg t "$tag" '.[$t]' "$METADATA_FILE"); local pk=$(echo "$meta" | jq -r '.publicKey'); local sid=$(echo "$meta" | jq -r '.shortId')
-                     url="vless://${uuid}@${link_ip}:${port}?security=reality&encryption=none&pbk=${pk}&fp=chrome&type=tcp&flow=xtls-rprx-vision&sni=$(echo "$node" | jq -r '.tls.server_name')&sid=${sid}#$(_url_encode "$dn")"
-                 elif [ "$(echo "$node" | jq -r '.transport.type')" == "ws" ]; then
-                      local sn=$(_get_proxy_field "$pn" ".servername"); local path=$(echo "$node" | jq -r '.transport.path')
-                      url="vless://${uuid}@${link_ip}:${port}?security=tls&encryption=none&type=ws&host=${sn}&path=$(_url_encode "$path")&sni=${sn}#$(_url_encode "$dn")"
-                 else url="vless://${uuid}@${link_ip}:${port}?encryption=none&type=tcp#$(_url_encode "$dn")"; fi ;;
+                local uuid=$(echo "$node" | jq -r '.users[0].users[0].uuid // .users[0].uuid')
+                # 判断是 Reality 还是 WS 还是 TCP
+                if [ "$(echo "$node" | jq -r '.tls.reality.enabled // false')" == "true" ]; then
+                    local meta=$(jq -r --arg t "$tag" '.[$t]' "$METADATA_FILE")
+                    local pk=$(echo "$meta" | jq -r '.publicKey')
+                    local sid=$(echo "$meta" | jq -r '.shortId')
+                    local sni=$(echo "$node" | jq -r '.tls.server_name')
+                    
+                    url=$(_gen_link_string "vless-reality" "$dn" "$link_ip" "$port" "$uuid" "$sni" "$pk" "$sid")
+                elif [ "$(echo "$node" | jq -r '.transport.type')" == "ws" ]; then
+                    local sn=$(_get_proxy_field "$pn" ".servername")
+                    local path=$(echo "$node" | jq -r '.transport.path')
+                    local sv="false" # 默认不跳过，如需获取真实状态需解析 config 或 yaml
+                    
+                    url=$(_gen_link_string "vless-ws-tls" "$dn" "$link_ip" "$port" "$uuid" "$sn" "$path" "$sv")
+                else
+                    url=$(_gen_link_string "vless-tcp" "$dn" "$link_ip" "$port" "$uuid")
+                fi 
+                ;;
+
             "trojan")
-                 local pw=$(echo "$node" | jq -r '.users[0].password')
-                 if [ "$(echo "$node" | jq -r '.transport.type')" == "ws" ]; then
-                      local sn=$(_get_proxy_field "$pn" ".sni"); local path=$(echo "$node" | jq -r '.transport.path')
-                      url="trojan://${pw}@${link_ip}:${port}?security=tls&type=ws&host=${sn}&path=$(_url_encode "$path")&sni=${sn}#$(_url_encode "$dn")"
-                 else local sn=$(_get_proxy_field "$pn" ".sni"); url="trojan://${pw}@${link_ip}:${port}?security=tls&type=tcp&sni=${sn}#$(_url_encode "$dn")"; fi ;;
+                local pw=$(echo "$node" | jq -r '.users[0].password')
+                if [ "$(echo "$node" | jq -r '.transport.type')" == "ws" ]; then
+                    local sn=$(_get_proxy_field "$pn" ".sni")
+                    local path=$(echo "$node" | jq -r '.transport.path')
+                    
+                    url=$(_gen_link_string "trojan-ws-tls" "$dn" "$link_ip" "$port" "$pw" "$sn" "$path" "false")
+                else
+                    local sn=$(_get_proxy_field "$pn" ".sni")
+                    url=$(_gen_link_string "trojan-tcp" "$dn" "$link_ip" "$port" "$pw" "$sn")
+                fi 
+                ;;
+
             "hysteria2")
-                 local pw=$(echo "$node" | jq -r '.users[0].password'); 
-                 local sn=$(echo "$node" | jq -r '.tls.server_name'); 
-                 local meta=$(jq -r --arg t "$tag" '.[$t]' "$METADATA_FILE")
-                 
-                 # [修复] 如果 config 中没有 SNI，尝试从 metadata 或 clash 配置文件中读取
-                 if [[ -z "$sn" || "$sn" == "null" ]]; then sn=$(echo "$meta" | jq -r '.server_name // empty'); fi
-                 if [[ -z "$sn" || "$sn" == "null" ]]; then sn=$(_get_proxy_field "$pn" ".sni"); fi
-                 
-                 local op=$(echo "$meta" | jq -r '.obfsPassword'); local obfs_param=""; [[ -n "$op" && "$op" != "null" ]] && obfs_param="&obfs=salamander&obfs-password=${op}"; local hop=$(echo "$meta" | jq -r '.portHopping // empty'); local hop_param=""; [[ -n "$hop" && "$hop" != "null" ]] && hop_param="&mport=${hop}"
-                 url="hysteria2://${pw}@${link_ip}:${port}?sni=${sn}&insecure=1${obfs_param}${hop_param}#$(_url_encode "$dn")" ;;
-            "tuic") local u=$(echo "$node" | jq -r '.users[0].uuid'); local pw=$(echo "$node" | jq -r '.users[0].password'); local sn=$(echo "$node" | jq -r '.tls.server_name'); url="tuic://${u}:${pw}@${link_ip}:${port}?sni=${sn}&alpn=h3&congestion_control=bbr&udp_relay_mode=native&allow_insecure=1#$(_url_encode "$dn")" ;;
-            "anytls") local pw=$(echo "$node" | jq -r '.users[0].password'); local sn=$(echo "$node" | jq -r '.tls.server_name'); local sv=$(_get_proxy_field "$pn" ".skip-cert-verify"); local iparam=""; [ "$sv" == "true" ] && iparam="&insecure=1&allowInsecure=1"; url="anytls://${pw}@${link_ip}:${port}?security=tls&sni=${sn}${iparam}&type=tcp#$(_url_encode "$dn")" ;;
-            "shadowsocks") local m=$(echo "$node" | jq -r '.method'); local p=$(echo "$node" | jq -r '.password'); url="ss://$(_url_encode "${m}:${p}")@${link_ip}:${port}#$(_url_encode "$dn")" ;;
-            "socks") echo "  SOCKS5";;
+                local pw=$(echo "$node" | jq -r '.users[0].password')
+                local sn=$(echo "$node" | jq -r '.tls.server_name')
+                local meta=$(jq -r --arg t "$tag" '.[$t]' "$METADATA_FILE")
+                
+                # SNI 兜底逻辑：Config -> Metadata -> Clash YAML
+                if [[ -z "$sn" || "$sn" == "null" ]]; then sn=$(echo "$meta" | jq -r '.server_name // empty'); fi
+                if [[ -z "$sn" || "$sn" == "null" ]]; then sn=$(_get_proxy_field "$pn" ".sni"); fi
+                
+                local op=$(echo "$meta" | jq -r '.obfsPassword // empty')
+                local hop=$(echo "$meta" | jq -r '.portHopping // empty')
+                
+                url=$(_gen_link_string "hysteria2" "$dn" "$link_ip" "$port" "$pw" "$sn" "$op" "$hop")
+                ;;
+
+            "tuic")
+                local uuid=$(echo "$node" | jq -r '.users[0].uuid')
+                local pw=$(echo "$node" | jq -r '.users[0].password')
+                local sn=$(echo "$node" | jq -r '.tls.server_name')
+                
+                url=$(_gen_link_string "tuic" "$dn" "$link_ip" "$port" "$uuid" "$pw" "$sn")
+                ;;
+
+            "anytls")
+                local pw=$(echo "$node" | jq -r '.users[0].password')
+                local sn=$(echo "$node" | jq -r '.tls.server_name')
+                local sv=$(_get_proxy_field "$pn" ".skip-cert-verify")
+                
+                url=$(_gen_link_string "anytls" "$dn" "$link_ip" "$port" "$pw" "$sn" "$sv")
+                ;;
+
+            "shadowsocks")
+                local m=$(echo "$node" | jq -r '.method')
+                local p=$(echo "$node" | jq -r '.password')
+                
+                url=$(_gen_link_string "shadowsocks" "$dn" "$link_ip" "$port" "$m" "$p")
+                ;;
+
+            "socks")
+                echo -e "  节点: ${CYAN}${dn}${NC} (SOCKS5)"
+                ;;
         esac
-        [ -n "$url" ] && echo -e "  链接: ${url}" && echo "$url" >> /tmp/singbox_links.tmp
+
+        # --- 统一展示与收集 ---
+        if [ -n "$url" ]; then
+            echo -e "  节点: ${CYAN}${dn}${NC}"
+            echo -e "  链接: ${YELLOW}${url}${NC}"
+            echo "──────────────────────────────────────"
+            echo "$url" >> /tmp/singbox_links.tmp
+        fi
     done
-    if [ -f /tmp/singbox_links.tmp ]; then read -p "生成聚合 Base64? (y/N): " gen; if [[ "$gen" == "y" ]]; then echo -e "\n${CYAN}$(cat /tmp/singbox_links.tmp | base64 -w 0)${NC}\n"; fi; rm -f /tmp/singbox_links.tmp; fi
+
+    # 3. Base64 聚合生成
+    if [ -f /tmp/singbox_links.tmp ]; then 
+        read -p "生成聚合 Base64? (y/N): " gen
+        if [[ "$gen" == "y" ]]; then 
+            echo -e "\n${CYAN}$(cat /tmp/singbox_links.tmp | base64 -w 0)${NC}\n"
+        fi
+        rm -f /tmp/singbox_links.tmp
+    fi
 }
 
 _delete_node() {
