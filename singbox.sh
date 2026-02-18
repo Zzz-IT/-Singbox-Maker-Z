@@ -1587,7 +1587,7 @@ _main_menu() {
         echo -e "    ${CYAN}SERVICE CONTROL${NC}"
         echo -e "    ${WHITE}06.${NC} 重启服务            ${WHITE}07.${NC} 停止服务"
         echo -e "    ${WHITE}08.${NC} 运行状态            ${WHITE}09.${NC} 实时日志"
-        echo -e "    ${WHITE}10.${NC} 定时启停            ${WHITE}11.${NC} 高级配置 ${YELLOW}(NEW)${NC}" 
+        echo -e "    ${WHITE}10.${NC} 定时启停            ${WHITE}11.${NC} 高级配置" 
         echo -e ""
 
         # --- 维护与更新 ---
