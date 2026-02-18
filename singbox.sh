@@ -755,6 +755,9 @@ WantedBy=multi-user.target
 EOF
 }
 _create_openrc_service() {
+    # [修复] 动态查找 bash 路径，与 Systemd 逻辑保持一致
+    local bash_path=$(command -v bash || echo "/bin/bash")
+
     touch "${LOG_FILE}"
     cat > "$SERVICE_FILE" <<EOF
 #!/sbin/openrc-run
@@ -777,9 +780,9 @@ start_pre() {
     export GOMEMLIMIT="$(_get_mem_limit)MiB"
 }
 
-# [新增] 启动后立即拉起 Argo
+# [修复] 使用绝对路径调用 bash，确保 OpenRC 能找到解释器
 start_post() {
-    bash "${SELF_SCRIPT_PATH}" keepalive >/dev/null 2>&1 &
+    ${bash_path} "${SELF_SCRIPT_PATH}" keepalive >/dev/null 2>&1 &
 }
 EOF
     chmod +x "$SERVICE_FILE"
