@@ -849,7 +849,9 @@ _get_proxy_field() {
 
 _add_node_to_yaml() {
     local j="$1"; local n=$(echo "$j" | jq -r .name)
-    _atomic_modify_yaml "$CLASH_YAML_FILE" ".proxies |= . + [$j] | .proxies |= unique_by(.name)"
+
+    ${YQ_BINARY} eval ".proxies |= . + [$j] | .proxies |= unique_by(.name)" -i "$CLASH_YAML_FILE"
+    
     PROXY_NAME="$n" ${YQ_BINARY} eval '.proxy-groups[] |= (select(.name == "节点选择") | .proxies |= . + [env(PROXY_NAME)] | .proxies |= unique)' -i "$CLASH_YAML_FILE"
 }
 _remove_node_from_yaml() {
