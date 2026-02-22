@@ -6,6 +6,7 @@ Singbox Maker Z 是一个专为资源受限服务器（如 128MB 内存 VPS）�
 <p align="left">
 <img src="pic/主菜单.png" alt="Network Dashboard Preview" width="360">
 </p>
+
 ## 核心架构设计
 
 项目采用 **微内核 + 插件化（Library-based）** 的模块化设计。核心逻辑位于 `singbox.sh`，而底层功能拆分为独立的 Shell 库，确保了系统的可维护性与扩展性：
@@ -25,6 +26,7 @@ Singbox Maker Z 是一个专为资源受限服务器（如 128MB 内存 VPS）�
 <p align="left">
 <img src="pic/ARGO隧道.png" alt="Argo Tunnel Manager" width="370">
 </p>
+
 ### 2. 全生命周期管理 (Scheduled Lifecycle)
 
 支持对服务运行状态进行精确到分钟的时间编排：
@@ -88,6 +90,7 @@ curl -fsSL https://raw.githubusercontent.com/Zzz-IT/-Singbox-Maker-Z/main/instal
 ---
 
 **致谢**：本项目在 [singbox-lite](https://github.com/0xdabiaoge/singbox-lite) 的基础上进行了深度重构与功能演进。
+
 
 
 
