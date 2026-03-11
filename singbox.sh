@@ -129,9 +129,9 @@ _install_dependencies() {
     # 基础依赖
     local pkgs="curl jq openssl wget procps iptables socat tar iproute2 gawk"
     
-    # 根据发行版判断 cron 包名
+   # 根据发行版判断 cron 包名
     if command -v apk &>/dev/null; then
-        pkgs="$pkgs dcron"  # Alpine 使用 dcron
+        pkgs="$pkgs dcron libc6-compat gcompat"  # Alpine 增加 C 库兼容层
     elif command -v yum &>/dev/null || command -v dnf &>/dev/null; then
         pkgs="$pkgs cronie" # RHEL系 使用 cronie
     else
@@ -982,11 +982,19 @@ _add_anytls() {
 
 _add_vless_reality() {
     local node_ip="${server_ip}" port="" server_name="www.apple.com" name=""
-    read -p "伪装域名 (默认 www.apple.com): " sn; server_name=${sn:-"www.apple.com"}; 
-    read -p "监听端口: " port
-    [[ -z "$port" ]] && _error "端口不能为空" && return 1
-    read -p "名称 (默认 VLESS-REALITY): " cn; name=${cn:-"VLESS-REALITY"}
-    local safe_name=$(_sanitize_tag "$name"); local tag="${safe_name}_${port}"; if jq -e ".inbounds[] | select(.tag == \"$tag\")" "$CONFIG_FILE" >/dev/null 2>&1; then tag="${tag}_$(openssl rand -hex 2)"; fi
+    # 增加批处理判断
+    if [ "${BATCH_MODE:-}" == "true" ]; then
+        server_name="${BATCH_SNI:-www.apple.com}"
+        port="$BATCH_PORT"
+        name="VLESS-REALITY"
+    else
+        read -p "伪装域名 (默认 www.apple.com): " sn; server_name=${sn:-"www.apple.com"}
+        read -p "监听端口: " port
+        [[ -z "$port" ]] && _error "端口不能为空" && return 1
+        read -p "名称 (默认 VLESS-REALITY): " cn; name=${cn:-"VLESS-REALITY"}
+    fi
+    local safe_name=$(_sanitize_tag "$name"); local tag="${safe_name}_${port}"
+    if jq -e ".inbounds[] | select(.tag == \"$tag\")" "$CONFIG_FILE" >/dev/null 2>&1; then tag="${tag}_$(openssl rand -hex 2)"; fi
     local uuid=$(${SINGBOX_BIN} generate uuid); local keypair=$(${SINGBOX_BIN} generate reality-keypair)
     local pk=$(echo "$keypair" | awk '/PrivateKey/ {print $2}'); local pbk=$(echo "$keypair" | awk '/PublicKey/ {print $2}'); local sid=$(${SINGBOX_BIN} generate rand --hex 8)
     local link_ip="$node_ip"; [[ "$node_ip" == *":"* ]] && link_ip="[$node_ip]"
@@ -1012,15 +1020,34 @@ _add_vless_tcp() {
 }
 
 _add_hysteria2() {
-    local node_ip="${server_ip}" port="" server_name="www.apple.com" obfs_password="" port_hopping="" use_multiport="false" name=""
-    read -p "监听端口: " port
-    [[ -z "$port" ]] && _error "端口不能为空" && return 1
-    read -p "伪装域名 (默认 www.apple.com): " sn; server_name=${sn:-"www.apple.com"}; read -p "名称 (默认 Hysteria2): " cn; name=${cn:-"Hysteria2"}
-    local safe_name=$(_sanitize_tag "$name"); local tag="${safe_name}_${port}"; if jq -e ".inbounds[] | select(.tag == \"$tag\")" "$CONFIG_FILE" >/dev/null 2>&1; then tag="${tag}_$(openssl rand -hex 2)"; fi
-    local cert_path="${SINGBOX_DIR}/${tag}.pem"; local key_path="${SINGBOX_DIR}/${tag}.key"; _generate_self_signed_cert "$server_name" "$cert_path" "$key_path" || return 1
-    read -p "密码(回车随机): " pw; password=${pw:-$(${SINGBOX_BIN} generate rand --hex 16)}
-    read -p "开启 QUIC 混淆? (y/N): " hc; [[ "$hc" == "y" ]] && obfs_password=$(${SINGBOX_BIN} generate rand --hex 16)
-    read -p "开启端口跳跃? (y/N): " hopc; if [[ "$hopc" == "y" ]]; then read -p "范围 (20000-30000): " port_hopping; if [[ "$port_hopping" =~ ^([0-9]+)-([0-9]+)$ ]]; then port_range_start="${BASH_REMATCH[1]}"; port_range_end="${BASH_REMATCH[2]}"; [ $((port_range_end - port_range_start + 1)) -le 1000 ] && use_multiport="true"; fi; fi
+    local node_ip="${server_ip}" port="" server_name="www.apple.com" obfs_password="" port_hopping="" use_multiport="false" name="" password=""
+    
+    # 增加批处理判断 - 端口与域名
+    if [ "${BATCH_MODE:-}" == "true" ]; then
+        port="$BATCH_PORT"
+        server_name="${BATCH_SNI:-www.apple.com}"
+        name="Hysteria2"
+    else
+        read -p "监听端口: " port
+        [[ -z "$port" ]] && _error "端口不能为空" && return 1
+        read -p "伪装域名 (默认 www.apple.com): " sn; server_name=${sn:-"www.apple.com"}
+        read -p "名称 (默认 Hysteria2): " cn; name=${cn:-"Hysteria2"}
+    fi
+    local safe_name=$(_sanitize_tag "$name"); local tag="${safe_name}_${port}"
+    if jq -e ".inbounds[] | select(.tag == \"$tag\")" "$CONFIG_FILE" >/dev/null 2>&1; then tag="${tag}_$(openssl rand -hex 2)"; fi
+    local cert_path="${SINGBOX_DIR}/${tag}.pem"; local key_path="${SINGBOX_DIR}/${tag}.key"
+    _generate_self_signed_cert "$server_name" "$cert_path" "$key_path" || return 1
+   # 增加批处理判断 - 高级选项（混淆、跳跃等）默认跳过
+    if [ "${BATCH_MODE:-}" == "true" ]; then
+        password=$(${SINGBOX_BIN} generate rand --hex 16)
+        obfs_password=""
+        port_hopping=""
+        use_multiport="false"
+    else
+        read -p "密码(回车随机): " pw; password=${pw:-$(${SINGBOX_BIN} generate rand --hex 16)}
+        read -p "开启 QUIC 混淆? (y/N): " hc; [[ "$hc" == "y" ]] && obfs_password=$(${SINGBOX_BIN} generate rand --hex 16)
+        read -p "开启端口跳跃? (y/N): " hopc; if [[ "$hopc" == "y" ]]; then read -p "范围 (20000-30000): " port_hopping; if [[ "$port_hopping" =~ ^([0-9]+)-([0-9]+)$ ]]; then port_range_start="${BASH_REMATCH[1]}"; port_range_end="${BASH_REMATCH[2]}"; [ $((port_range_end - port_range_start + 1)) -le 1000 ] && use_multiport="true"; fi; fi
+    fi
     local link_ip="$node_ip"; [[ "$node_ip" == *":"* ]] && link_ip="[$node_ip]"
     local inbound=$(jq -n --arg t "$tag" --arg p "$port" --arg pw "$password" --arg op "$obfs_password" --arg cert "$cert_path" --arg key "$key_path" '{"type":"hysteria2","tag":$t,"listen":"::","listen_port":($p|tonumber),"users":[{"password":$pw}],"tls":{"enabled":true,"alpn":["h3"],"certificate_path":$cert,"key_path":$key}} | if $op != "" then .obfs={"type":"salamander","password":$op} else . end')
     _atomic_modify_json "$CONFIG_FILE" ".inbounds += [$inbound] | .inbounds |= unique_by(.tag)" || return 1
@@ -1042,10 +1069,20 @@ _add_hysteria2() {
 
 _add_tuic() {
     local node_ip="${server_ip}" port="" server_name="www.apple.com" name=""
-    read -p "监听端口: " port
-    [[ -z "$port" ]] && _error "端口不能为空" && return 1
-    read -p "SNI(默认 www.apple.com): " sn; server_name=${sn:-"www.apple.com"}; read -p "名称 (默认 TUICv5): " cn; name=${cn:-"TUICv5"}
-    local safe_name=$(_sanitize_tag "$name"); local tag="${safe_name}_${port}"; if jq -e ".inbounds[] | select(.tag == \"$tag\")" "$CONFIG_FILE" >/dev/null 2>&1; then tag="${tag}_$(openssl rand -hex 2)"; fi
+    
+    # 增加批处理判断
+    if [ "${BATCH_MODE:-}" == "true" ]; then
+        port="$BATCH_PORT"
+        server_name="${BATCH_SNI:-www.apple.com}"
+        name="TUICv5"
+    else
+        read -p "监听端口: " port
+        [[ -z "$port" ]] && _error "端口不能为空" && return 1
+        read -p "SNI(默认 www.apple.com): " sn; server_name=${sn:-"www.apple.com"}
+        read -p "名称 (默认 TUICv5): " cn; name=${cn:-"TUICv5"}
+    fi
+    local safe_name=$(_sanitize_tag "$name"); local tag="${safe_name}_${port}"
+    if jq -e ".inbounds[] | select(.tag == \"$tag\")" "$CONFIG_FILE" >/dev/null 2>&1; then tag="${tag}_$(openssl rand -hex 2)"; fi
     local cert_path="${SINGBOX_DIR}/${tag}.pem" key_path="${SINGBOX_DIR}/${tag}.key"; _generate_self_signed_cert "$server_name" "$cert_path" "$key_path" || return 1
     local uuid=$(${SINGBOX_BIN} generate uuid); local password=$(${SINGBOX_BIN} generate rand --hex 16); local link_ip="$node_ip"; [[ "$node_ip" == *":"* ]] && link_ip="[$node_ip]"
     local inbound=$(jq -n --arg t "$tag" --arg p "$port" --arg u "$uuid" --arg pw "$password" --arg cert "$cert_path" --arg key "$key_path" '{"type":"tuic","tag":$t,"listen":"::","listen_port":($p|tonumber),"users":[{"uuid":$u,"password":$pw}],"congestion_control":"bbr","tls":{"enabled":true,"alpn":["h3"],"certificate_path":$cert,"key_path":$key}}')
