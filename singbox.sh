@@ -1260,7 +1260,7 @@ _view_nodes() {
     if [ -f /tmp/singbox_links.tmp ]; then 
         read -p "生成聚合 Base64? (y/N): " gen
         if [[ "$gen" == "y" ]]; then 
-            echo -e "\n${CYAN}$(cat /tmp/singbox_links.tmp | base64 -w 0)${NC}\n"
+            echo -e "\n${CYAN}$(cat /tmp/singbox_links.tmp | base64 | tr -d '\n')${NC}\n"
         fi
         rm -f /tmp/singbox_links.tmp
     fi
