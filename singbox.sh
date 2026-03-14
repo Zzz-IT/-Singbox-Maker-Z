@@ -804,10 +804,59 @@ _uninstall() {
     _success "已卸载"; exit 0
 }
 _initialize_config_files() {
-    mkdir -p ${SINGBOX_DIR}
+    mkdir -p "${SINGBOX_DIR}"
+    
+    # 1. 初始化 JSON 配置文件
     [ -s "$CONFIG_FILE" ] || echo '{"inbounds":[],"outbounds":[{"type":"direct","tag":"direct"}],"route":{"rules":[],"final":"direct"}}' > "$CONFIG_FILE"
     [ -s "$METADATA_FILE" ] || echo "{}" > "$METADATA_FILE"
-    if [ ! -s "$CLASH_YAML_FILE" ]; then echo -e "port: 7890\nsocks-port: 7891\nallow-lan: false\nmode: rule\nlog-level: info\nexternal-controller: '127.0.0.1:9090'\nproxies: []\nproxy-groups: [{name: \"节点选择\", type: select, proxies: []}]\nrules: [\"MATCH,节点选择\"]" > "$CLASH_YAML_FILE"; fi
+    
+    # 2. 定义 Clash 默认模板
+    local default_clash="port: 7890\nsocks-port: 7891\nallow-lan: false\nmode: rule\nlog-level: info\nexternal-controller: '127.0.0.1:9090'\nproxies: []\nproxy-groups: [{name: \"节点选择\", type: select, proxies: []}]\nrules: [\"MATCH,节点选择\"]"
+
+    # 3. YAML 自修复逻辑
+    if [ ! -s "$CLASH_YAML_FILE" ]; then 
+        # 3.1 完全不存在或为空：直接生成
+        echo -e "$default_clash" > "$CLASH_YAML_FILE"
+    else
+        # 3.2 语法级检查：验证是否为合法的 YAML 格式
+        if ! "${YQ_BINARY}" eval '.' "$CLASH_YAML_FILE" >/dev/null 2>&1; then
+            _warn "检测到 clash.yaml 语法已损坏，正在备份并重置..."
+            mv -f "$CLASH_YAML_FILE" "${CLASH_YAML_FILE}.bak"
+            echo -e "$default_clash" > "$CLASH_YAML_FILE"
+        else
+            # 3.3 结构级查漏补缺
+            local modified=false
+            
+            # 检查 proxies 数组是否存在
+            if [[ "$("${YQ_BINARY}" eval 'has("proxies")' "$CLASH_YAML_FILE")" != "true" ]]; then
+                "${YQ_BINARY}" eval '.proxies = []' -i "$CLASH_YAML_FILE"
+                modified=true
+            fi
+            
+            # 检查 proxy-groups 结构是否存在
+            if [[ "$("${YQ_BINARY}" eval 'has("proxy-groups")' "$CLASH_YAML_FILE")" != "true" ]]; then
+                "${YQ_BINARY}" eval '.proxy-groups = [{"name": "节点选择", "type": "select", "proxies": []}]' -i "$CLASH_YAML_FILE"
+                modified=true
+            else
+                # 业务级检查：存在 proxy-groups，但检查有没有 "节点选择" 这个核心策略组
+                local has_group=$("${YQ_BINARY}" eval '.proxy-groups[] | select(.name == "节点选择") | .name' "$CLASH_YAML_FILE")
+                if [ -z "$has_group" ]; then
+                    "${YQ_BINARY}" eval '.proxy-groups += [{"name": "节点选择", "type": "select", "proxies": []}]' -i "$CLASH_YAML_FILE"
+                    modified=true
+                fi
+            fi
+            
+            # 检查 rules 数组是否存在
+            if [[ "$("${YQ_BINARY}" eval 'has("rules")' "$CLASH_YAML_FILE")" != "true" ]]; then
+                "${YQ_BINARY}" eval '.rules = ["MATCH,节点选择"]' -i "$CLASH_YAML_FILE"
+                modified=true
+            fi
+            
+            if [ "$modified" = true ]; then
+                _info "已自动修复 clash.yaml 中缺失的关键结构。"
+            fi
+        fi
+    fi
 }
 _cleanup_legacy_config() {
     if jq -e '.outbounds[] | select(.tag | startswith("relay-out-"))' "$CONFIG_FILE" >/dev/null 2>&1; then
