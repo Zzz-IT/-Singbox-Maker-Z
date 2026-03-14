@@ -1709,7 +1709,7 @@ main() {
     if [ ! -f "${SINGBOX_BIN}" ]; then _install_sing_box; first=true; fi
     
     # 1. 初始化配置文件 (如果不存在)
-    if [ ! -f "${CONFIG_FILE}" ]; then _initialize_config_files; fi
+    _initialize_config_files
     
     # 2. 清理旧版本格式
     _cleanup_legacy_config
