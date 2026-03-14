@@ -807,7 +807,7 @@ _initialize_config_files() {
     mkdir -p ${SINGBOX_DIR}
     [ -s "$CONFIG_FILE" ] || echo '{"inbounds":[],"outbounds":[{"type":"direct","tag":"direct"}],"route":{"rules":[],"final":"direct"}}' > "$CONFIG_FILE"
     [ -s "$METADATA_FILE" ] || echo "{}" > "$METADATA_FILE"
-    if [ ! -s "$CLASH_YAML_FILE" ]; then echo -e "port: 7890\nsocks-port: 7891\nallow-lan: false\nmode: rule\nlog-level: info\nexternal-controller: '127.0.0.1:9090'\nproxies: []\nproxy-groups: [{name: \"节点选择\", type: select, proxies: []}]\nrules: [MATCH,节点选择]" > "$CLASH_YAML_FILE"; fi
+    if [ ! -s "$CLASH_YAML_FILE" ]; then echo -e "port: 7890\nsocks-port: 7891\nallow-lan: false\nmode: rule\nlog-level: info\nexternal-controller: '127.0.0.1:9090'\nproxies: []\nproxy-groups: [{name: \"节点选择\", type: select, proxies: []}]\nrules: [\"MATCH,节点选择\"]" > "$CLASH_YAML_FILE"; fi
 }
 _cleanup_legacy_config() {
     if jq -e '.outbounds[] | select(.tag | startswith("relay-out-"))' "$CONFIG_FILE" >/dev/null 2>&1; then
@@ -850,7 +850,7 @@ _get_proxy_field() {
 _add_node_to_yaml() {
     local j="$1"; local n=$(echo "$j" | jq -r .name)
 
-    ${YQ_BINARY} eval ".proxies |= . + [$j] | .proxies |= unique_by(.name)" -i "$CLASH_YAML_FILE"
+    NODE_JSON="$j" ${YQ_BINARY} eval '.proxies |= . + [env(NODE_JSON) | from_json] | .proxies |= unique_by(.name)' -i "$CLASH_YAML_FILE"
     
     PROXY_NAME="$n" ${YQ_BINARY} eval '.proxy-groups[] |= (select(.name == "节点选择") | .proxies |= . + [env(PROXY_NAME)] | .proxies |= unique)' -i "$CLASH_YAML_FILE"
 }
