@@ -810,54 +810,67 @@ _initialize_config_files() {
     [ -s "$CONFIG_FILE" ] || echo '{"inbounds":[],"outbounds":[{"type":"direct","tag":"direct"}],"route":{"rules":[],"final":"direct"}}' > "$CONFIG_FILE"
     [ -s "$METADATA_FILE" ] || echo "{}" > "$METADATA_FILE"
     
-    # 2. 定义 Clash 默认模板
-    local default_clash="port: 7890\nsocks-port: 7891\nallow-lan: false\nmode: rule\nlog-level: info\nexternal-controller: '127.0.0.1:9090'\nproxies: []\nproxy-groups: [{name: \"节点选择\", type: select, proxies: []}]\nrules: [\"MATCH,节点选择\"]"
+    # 2. 封装写入标准 Clash 模板的内置函数 (使用极其干净的纯缩进换行风格，无引号)
+    _write_default_clash() {
+        cat > "$CLASH_YAML_FILE" << 'EOF'
+port: 7890
+socks-port: 7891
+allow-lan: false
+mode: rule
+log-level: info
+external-controller: 127.0.0.1:9090
+proxies: []
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies: []
+rules:
+  - MATCH,PROXY
+EOF
+    }
 
     # 3. YAML 自修复逻辑
     if [ ! -s "$CLASH_YAML_FILE" ]; then 
         # 3.1 完全不存在或为空：直接生成
-        echo -e "$default_clash" > "$CLASH_YAML_FILE"
+        _write_default_clash
     else
         # 3.2 语法级检查：验证是否为合法的 YAML 格式
         if ! "${YQ_BINARY}" eval '.' "$CLASH_YAML_FILE" >/dev/null 2>&1; then
             _warn "检测到 clash.yaml 语法已损坏，正在备份并重置..."
             mv -f "$CLASH_YAML_FILE" "${CLASH_YAML_FILE}.bak"
-            echo -e "$default_clash" > "$CLASH_YAML_FILE"
+            _write_default_clash
         else
-            # 3.3 结构级查漏补缺 (已加入 style="" 强制换行缩进)
+            # 3.3 结构级查漏补缺 (全程使用 -P 保证多行排版)
             local modified=false
             
-            # 检查 proxies 数组是否存在
             if [[ "$("${YQ_BINARY}" eval 'has("proxies")' "$CLASH_YAML_FILE")" != "true" ]]; then
-                "${YQ_BINARY}" eval '.proxies = []' -i "$CLASH_YAML_FILE"
+                "${YQ_BINARY}" eval '.proxies = []' -P -i "$CLASH_YAML_FILE"
                 modified=true
             fi
             
-            # 检查 proxy-groups 结构是否存在
             if [[ "$("${YQ_BINARY}" eval 'has("proxy-groups")' "$CLASH_YAML_FILE")" != "true" ]]; then
-                "${YQ_BINARY}" eval '.proxy-groups = [{"name": "节点选择", "type": "select", "proxies": []}] | .proxy-groups style=""' -i "$CLASH_YAML_FILE"
+                "${YQ_BINARY}" eval '.proxy-groups = [{"name": "PROXY", "type": "select", "proxies": []}]' -P -i "$CLASH_YAML_FILE"
                 modified=true
             else
-                # 业务级检查：存在 proxy-groups，但检查有没有 "节点选择" 这个核心策略组
-                local has_group=$("${YQ_BINARY}" eval '.proxy-groups[] | select(.name == "节点选择") | .name' "$CLASH_YAML_FILE")
+                # 检查是否存在 PROXY 策略组
+                local has_group=$("${YQ_BINARY}" eval '.proxy-groups[] | select(.name == "PROXY") | .name' "$CLASH_YAML_FILE")
                 if [ -z "$has_group" ]; then
-                    "${YQ_BINARY}" eval '.proxy-groups += [{"name": "节点选择", "type": "select", "proxies": []}] | .proxy-groups style=""' -i "$CLASH_YAML_FILE"
+                    "${YQ_BINARY}" eval '.proxy-groups += [{"name": "PROXY", "type": "select", "proxies": []}]' -P -i "$CLASH_YAML_FILE"
                     modified=true
                 fi
             fi
             
-            # 检查 rules 数组是否存在
             if [[ "$("${YQ_BINARY}" eval 'has("rules")' "$CLASH_YAML_FILE")" != "true" ]]; then
-                "${YQ_BINARY}" eval '.rules = ["MATCH,节点选择"] | .rules style=""' -i "$CLASH_YAML_FILE"
+                "${YQ_BINARY}" eval '.rules = ["MATCH,PROXY"]' -P -i "$CLASH_YAML_FILE"
                 modified=true
             fi
 
-            # 3.4 节点数据自动同步与缩进格式化 (利用 [.proxies[].name] 和 style="")
+            # 3.4 节点数据自动同步 (将 proxies 列表同步到 PROXY 组下)
             local proxy_count=$("${YQ_BINARY}" eval '.proxies | length' "$CLASH_YAML_FILE")
             if [ "$proxy_count" -gt 0 ]; then
-                "${YQ_BINARY}" eval '(.proxy-groups[] | select(.name == "节点选择")).proxies = [.proxies[].name] | (.proxy-groups[] | select(.name == "节点选择")).proxies style=""' -i "$CLASH_YAML_FILE"
+                "${YQ_BINARY}" eval '(.proxy-groups[] | select(.name == "PROXY")).proxies = [.proxies[].name]' -P -i "$CLASH_YAML_FILE"
             else
-                "${YQ_BINARY}" eval '(.proxy-groups[] | select(.name == "节点选择")).proxies = []' -i "$CLASH_YAML_FILE"
+                "${YQ_BINARY}" eval '(.proxy-groups[] | select(.name == "PROXY")).proxies = []' -P -i "$CLASH_YAML_FILE"
             fi
             
             if [ "$modified" = true ]; then
@@ -907,14 +920,24 @@ _get_proxy_field() {
 _add_node_to_yaml() {
     local j="$1"; local n=$(echo "$j" | jq -r .name)
 
-    NODE_JSON="$j" ${YQ_BINARY} eval '.proxies |= . + [env(NODE_JSON) | from_json] | .proxies |= unique_by(.name)' -i "$CLASH_YAML_FILE"
+    # 1. 将长 JSON 写入临时文件，彻底绕过 Alpine/ash 环境变量被截断导致的 EOF Bug
+    echo "$j" > /tmp/sb_node_temp.json
     
-    PROXY_NAME="$n" ${YQ_BINARY} eval '.proxy-groups[] |= (select(.name == "节点选择") | .proxies |= . + [env(PROXY_NAME)] | .proxies |= unique)' -i "$CLASH_YAML_FILE"
+    # 2. 使用 load() 读取物理文件，并添加 -P 强制输出标准的缩进换行风格
+    ${YQ_BINARY} eval '.proxies |= . + [load("/tmp/sb_node_temp.json")] | .proxies |= unique_by(.name)' -P -i "$CLASH_YAML_FILE"
+    
+    # 3. 清理临时文件
+    rm -f /tmp/sb_node_temp.json
+    
+    # 将节点名追加到 PROXY 策略组，同样使用 -P 保持格式统一
+    PROXY_NAME="$n" ${YQ_BINARY} eval '.proxy-groups[] |= (select(.name == "PROXY") | .proxies |= . + [env(PROXY_NAME)] | .proxies |= unique)' -P -i "$CLASH_YAML_FILE"
 }
+
 _remove_node_from_yaml() {
     local n="$1"
-    PROXY_NAME="$n" ${YQ_BINARY} eval 'del(.proxies[] | select(.name == env(PROXY_NAME)))' -i "$CLASH_YAML_FILE"
-    PROXY_NAME="$n" ${YQ_BINARY} eval '.proxy-groups[] |= (select(.name == "节点选择") | .proxies |= del(.[] | select(. == env(PROXY_NAME))))' -i "$CLASH_YAML_FILE"
+    # 删除节点时清理 PROXY 组内的名字，保持 -P 规范排版
+    PROXY_NAME="$n" ${YQ_BINARY} eval 'del(.proxies[] | select(.name == env(PROXY_NAME)))' -P -i "$CLASH_YAML_FILE"
+    PROXY_NAME="$n" ${YQ_BINARY} eval '.proxy-groups[] |= (select(.name == "PROXY") | .proxies |= del(.[] | select(. == env(PROXY_NAME))))' -P -i "$CLASH_YAML_FILE"
 }
 
 # 新增函数：只负责生成 URL 字符串，不负责打印
