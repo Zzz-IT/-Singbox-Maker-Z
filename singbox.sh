@@ -230,25 +230,49 @@ _set_beijing_timezone() {
     fi
 }
 _install_sing_box() {
-    # [核心修改] 针对 Alpine 系统的原生优先策略
+    # [核心修复] 针对 Alpine 的低内存“直取单包”策略
     if command -v apk &>/dev/null; then
-        _info "检测到 Alpine 环境，正在尝试安装原生 sing-box 以规避段错误 (Segfault)..."
+        _info "检测到 Alpine，正在执行低内存原生安装方案..."
         
-        # 1. 尝试从当前已启用的源安装
-        # 2. 如果失败，尝试从 Edge 社区源强行拉取最新原生版本
-        if apk add --no-cache sing-box >/dev/null 2>&1 || \
-           apk add --no-cache sing-box --repository=http://dl-cdn.alpinelinux.org/alpine/edge/community >/dev/null 2>&1; then
-            
+        # 1. 尝试标准安装（如果用户已配置了 edge 源则会成功）
+        if apk add --no-cache sing-box >/dev/null 2>&1; then
             if [ -f /usr/bin/sing-box ]; then
-                # 将原生路径软链接到脚本定义的变量路径
                 ln -sf /usr/bin/sing-box "${SINGBOX_BIN}"
-                _success "原生 sing-box 安装成功且环境兼容。"
+                _success "原生 sing-box 安装成功。"
                 return 0
             fi
         fi
-        _warn "官方源安装失败，将回退至 GitHub 二进制方案 (风险：在部分 Alpine 版本上可能崩溃)..."
-    fi
 
+        # 2. 如果标准安装失败，通过镜像站目录直接抓取最新版 .apk
+        # 这种方式不解析整个仓库索引，128MB 内存绝对不会被 Killed
+        local arch=$(uname -m)
+        local alpine_arch="x86_64"
+        case $arch in
+            x86_64) alpine_arch="x86_64" ;;
+            aarch64|arm64) alpine_arch="aarch64" ;;
+            armv7l) alpine_arch="armv7" ;;
+        esac
+
+        local mirror="http://dl-cdn.alpinelinux.org/alpine/edge/community/${alpine_arch}/"
+        _info "正在从镜像站检索最新软件包..."
+        
+        # 获取最新的文件名 (例如 sing-box-1.8.4-r0.apk)
+        local apk_file=$(wget -qO- "$mirror" | grep -oE 'sing-box-[0-9.]+-r[0-9]+\.apk' | tail -1)
+        
+        if [ -n "$apk_file" ]; then
+            _info "正在下载: ${apk_file}"
+            wget -qO "/tmp/${apk_file}" "${mirror}${apk_file}"
+            # 本地安装下载好的 apk，--allow-untrusted 跳过未签名的索引验证（因为没下索引）
+            if apk add --no-cache --allow-untrusted "/tmp/${apk_file}" >/dev/null 2>&1; then
+                rm -f "/tmp/${apk_file}"
+                ln -sf /usr/bin/sing-box "${SINGBOX_BIN}"
+                _success "原生 sing-box (低内存模式) 部署成功。"
+                return 0
+            fi
+            rm -f "/tmp/${apk_file}"
+        fi
+        _warn "原生安装失败，将尝试回退至 GitHub 二进制方案..."
+    fi
     # --- 以下保持原有的 GitHub 下载及解压逻辑 ---
     _info "正在从 GitHub 安装 sing-box..."
     local arch=$(uname -m)
