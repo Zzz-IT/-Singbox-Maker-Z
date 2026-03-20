@@ -230,29 +230,7 @@ _set_beijing_timezone() {
     fi
 }
 _install_sing_box() {
-    if command -v apk >/dev/null 2>&1; then
-        _info "检测到 Alpine，正在执行低内存原生安装方案..."
-
-        # 只尝试一次最小原生路径：
-        # 1) 不单独 apk update
-        # 2) 不先尝试默认仓库
-        # 3) 不抓目录页，不本地装 apk
-        if apk add --no-cache \
-            --repository=http://dl-cdn.alpinelinux.org/alpine/edge/main \
-            --repository=http://dl-cdn.alpinelinux.org/alpine/edge/community \
-            sing-box >/dev/null 2>&1; then
-            if [ -x /usr/bin/sing-box ]; then
-                ln -sf /usr/bin/sing-box "${SINGBOX_BIN}"
-                _success "原生 sing-box 安装成功。"
-                return 0
-            fi
-        fi
-
-        _warn "原生安装失败，将尝试回退至 GitHub 二进制方案..."
-    fi
-
-    # --- 以下保持你的 GitHub 下载逻辑 ---
-    _info "正在从 GitHub 安装 sing-box..."
+    _info "正在安装 sing-box..."
     local arch=$(uname -m)
     local arch_tag
     case $arch in
@@ -261,25 +239,35 @@ _install_sing_box() {
         armv7l) arch_tag='armv7' ;;
         *) _error "不支持的架构：$arch"; exit 1 ;;
     esac
-
     local api_url="https://api.github.com/repos/SagerNet/sing-box/releases/latest"
-    local download_url
-    download_url=$(curl -s "$api_url" | jq -r ".assets[] | select(.name | contains(\"linux-${arch_tag}.tar.gz\")) | .browser_download_url")
-
-    if [ -z "$download_url" ]; then
-        _error "无法获取 sing-box 下载链接。"
-        exit 1
-    fi
-
+    local download_url=$(curl -s "$api_url" | jq -r ".assets[] | select(.name | contains(\"linux-${arch_tag}.tar.gz\")) | .browser_download_url")
+    if [ -z "$download_url" ]; then _error "无法获取 sing-box 下载链接。"; exit 1; fi
     wget -qO sing-box.tar.gz "$download_url" || { _error "下载失败!"; exit 1; }
-    local temp_dir
-    temp_dir=$(mktemp -d)
+    local temp_dir=$(mktemp -d)
     tar -xzf sing-box.tar.gz -C "$temp_dir"
-    mv "$temp_dir"/sing-box-*/sing-box "${SINGBOX_BIN}"
+    mv "$temp_dir/sing-box-"*"/sing-box" ${SINGBOX_BIN}
     rm -rf sing-box.tar.gz "$temp_dir"
-    chmod +x "${SINGBOX_BIN}"
+    chmod +x ${SINGBOX_BIN}
     _success "sing-box 安装成功"
 }
+
+_install_cloudflared() {
+    if [ -f "${CLOUDFLARED_BIN}" ]; then return 0; fi
+    _info "正在安装 cloudflared..."
+    local arch=$(uname -m)
+    local arch_tag
+    case $arch in
+        x86_64|amd64) arch_tag='amd64' ;;
+        aarch64|arm64) arch_tag='arm64' ;;
+        armv7l) arch_tag='arm' ;;
+        *) _error "不支持的架构：$arch"; return 1 ;;
+    esac
+    local download_url="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${arch_tag}"
+    wget -qO "${CLOUDFLARED_BIN}" "$download_url" || { _error "cloudflared 下载失败!"; return 1; }
+    chmod +x "${CLOUDFLARED_BIN}"
+    _success "cloudflared 安装成功"
+}
+
 
 _install_cloudflared() {
     if [ -f "${CLOUDFLARED_BIN}" ]; then return 0; fi
