@@ -131,7 +131,13 @@ _install_dependencies() {
     
    # 根据发行版判断 cron 包名
     if command -v apk &>/dev/null; then
-        pkgs="$pkgs dcron libc6-compat gcompat"  # Alpine 增加 C 库兼容层
+        # Alpine 系统特有依赖
+        pkgs="$pkgs dcron libc6-compat gcompat"
+        
+        # [新增] 强制检查并更新 gcompat 确保其完整且为最新版本，这是规避 Segfault 的第一道防线
+        _info "正在检查并更新 Alpine 兼容性组件 (gcompat)..."
+        apk add --no-cache --upgrade gcompat >/dev/null 2>&1 || true
+        
     elif command -v yum &>/dev/null || command -v dnf &>/dev/null; then
         pkgs="$pkgs cronie" # RHEL系 使用 cronie
     else
@@ -147,6 +153,7 @@ _install_dependencies() {
                 break
             fi
         else
+            # 兼容不同发行版的包存在性检查
             if ! command -v $pkg &>/dev/null && ! dpkg -l $pkg &>/dev/null 2>&1 && ! apk info -e $pkg &>/dev/null 2>&1; then
                 needs_install=true
                 break
@@ -223,7 +230,27 @@ _set_beijing_timezone() {
     fi
 }
 _install_sing_box() {
-    _info "正在安装 sing-box..."
+    # [核心修改] 针对 Alpine 系统的原生优先策略
+    if command -v apk &>/dev/null; then
+        _info "检测到 Alpine 环境，正在尝试安装原生 sing-box 以规避段错误 (Segfault)..."
+        
+        # 1. 尝试从当前已启用的源安装
+        # 2. 如果失败，尝试从 Edge 社区源强行拉取最新原生版本
+        if apk add --no-cache sing-box >/dev/null 2>&1 || \
+           apk add --no-cache sing-box --repository=http://dl-cdn.alpinelinux.org/alpine/edge/community >/dev/null 2>&1; then
+            
+            if [ -f /usr/bin/sing-box ]; then
+                # 将原生路径软链接到脚本定义的变量路径
+                ln -sf /usr/bin/sing-box "${SINGBOX_BIN}"
+                _success "原生 sing-box 安装成功且环境兼容。"
+                return 0
+            fi
+        fi
+        _warn "官方源安装失败，将回退至 GitHub 二进制方案 (风险：在部分 Alpine 版本上可能崩溃)..."
+    fi
+
+    # --- 以下保持原有的 GitHub 下载及解压逻辑 ---
+    _info "正在从 GitHub 安装 sing-box..."
     local arch=$(uname -m)
     local arch_tag
     case $arch in
