@@ -230,68 +230,64 @@ _set_beijing_timezone() {
     fi
 }
 _install_sing_box() {
-    # [核心修复] 针对 Alpine 的低内存“直取单包”策略
-    if command -v apk &>/dev/null; then
-        _info "检测到 Alpine，正在执行低内存原生安装方案..."
-        
-        # 1. 尝试标准安装（如果用户已配置了 edge 源则会成功）
+    if command -v apk >/dev/null 2>&1; then
+        _info "检测到 Alpine，正在执行低内存安装策略..."
+
+        # 只尝试一次最轻量的原生安装；成功就直接返回
+        # 不再走“抓单个 .apk 再本地 apk add”的伪低内存方案
         if apk add --no-cache sing-box >/dev/null 2>&1; then
-            if [ -f /usr/bin/sing-box ]; then
+            if [ -x /usr/bin/sing-box ]; then
                 ln -sf /usr/bin/sing-box "${SINGBOX_BIN}"
                 _success "原生 sing-box 安装成功。"
                 return 0
             fi
         fi
 
-        # 2. 如果标准安装失败，通过镜像站目录直接抓取最新版 .apk
-        # 这种方式不解析整个仓库索引，128MB 内存绝对不会被 Killed
-        local arch=$(uname -m)
-        local alpine_arch="x86_64"
-        case $arch in
-            x86_64) alpine_arch="x86_64" ;;
-            aarch64|arm64) alpine_arch="aarch64" ;;
-            armv7l) alpine_arch="armv7" ;;
-        esac
-
-        local mirror="http://dl-cdn.alpinelinux.org/alpine/edge/community/${alpine_arch}/"
-        _info "正在从镜像站检索最新软件包..."
-        
-        # 获取最新的文件名 (例如 sing-box-1.8.4-r0.apk)
-        local apk_file=$(wget -qO- "$mirror" | grep -oE 'sing-box-[0-9.]+-r[0-9]+\.apk' | tail -1)
-        
-        if [ -n "$apk_file" ]; then
-            _info "正在下载: ${apk_file}"
-            wget -qO "/tmp/${apk_file}" "${mirror}${apk_file}"
-            # 本地安装下载好的 apk，--allow-untrusted 跳过未签名的索引验证（因为没下索引）
-            if apk add --no-cache --allow-untrusted "/tmp/${apk_file}" >/dev/null 2>&1; then
-                rm -f "/tmp/${apk_file}"
-                ln -sf /usr/bin/sing-box "${SINGBOX_BIN}"
-                _success "原生 sing-box (低内存模式) 部署成功。"
-                return 0
-            fi
-            rm -f "/tmp/${apk_file}"
-        fi
-        _warn "原生安装失败，将尝试回退至 GitHub 二进制方案..."
+        _warn "原生安装失败，回退至 GitHub 极简二进制方案..."
     fi
-    # --- 以下保持原有的 GitHub 下载及解压逻辑 ---
-    _info "正在从 GitHub 安装 sing-box..."
-    local arch=$(uname -m)
+
+    _info "正在从 GitHub 安装 sing-box（极简低内存模式）..."
+
+    local arch
+    arch="$(uname -m)"
     local arch_tag
-    case $arch in
+    case "$arch" in
         x86_64|amd64) arch_tag='amd64' ;;
         aarch64|arm64) arch_tag='arm64' ;;
         armv7l) arch_tag='armv7' ;;
         *) _error "不支持的架构：$arch"; exit 1 ;;
     esac
-    local api_url="https://api.github.com/repos/SagerNet/sing-box/releases/latest"
-    local download_url=$(curl -s "$api_url" | jq -r ".assets[] | select(.name | contains(\"linux-${arch_tag}.tar.gz\")) | .browser_download_url")
-    if [ -z "$download_url" ]; then _error "无法获取 sing-box 下载链接。"; exit 1; fi
-    wget -qO sing-box.tar.gz "$download_url" || { _error "下载失败!"; exit 1; }
-    local temp_dir=$(mktemp -d)
-    tar -xzf sing-box.tar.gz -C "$temp_dir"
-    mv "$temp_dir/sing-box-"*"/sing-box" ${SINGBOX_BIN}
-    rm -rf sing-box.tar.gz "$temp_dir"
-    chmod +x ${SINGBOX_BIN}
+
+    # 不查 GitHub API，不用 jq，直接走固定版本或外部传入版本
+    # 这样避免 curl+jq 的额外内存与失败面
+    local version="${SINGBOX_VERSION:-1.13.2}"
+    local file="sing-box-${version}-linux-${arch_tag}.tar.gz"
+    local download_url="https://github.com/SagerNet/sing-box/releases/download/v${version}/${file}"
+
+    wget -qO /tmp/sing-box.tar.gz "$download_url" || {
+        _error "下载 sing-box 失败！"
+        exit 1
+    }
+
+    # 先列出归档内容，只找 sing-box 的真实内部路径
+    local inner_path
+    inner_path="$(tar -tzf /tmp/sing-box.tar.gz 2>/dev/null | grep -E '/sing-box$' | head -n 1)"
+
+    if [ -z "$inner_path" ]; then
+        rm -f /tmp/sing-box.tar.gz
+        _error "压缩包中未找到 sing-box 可执行文件。"
+        exit 1
+    fi
+
+    # 只抽取单个二进制到目标位置，避免整包解压到临时目录
+    tar -xzf /tmp/sing-box.tar.gz -O "$inner_path" > "${SINGBOX_BIN}" 2>/dev/null || {
+        rm -f /tmp/sing-box.tar.gz
+        _error "解压 sing-box 失败！"
+        exit 1
+    }
+
+    rm -f /tmp/sing-box.tar.gz
+    chmod +x "${SINGBOX_BIN}"
     _success "sing-box 安装成功"
 }
 
