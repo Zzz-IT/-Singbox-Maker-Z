@@ -251,23 +251,6 @@ _install_sing_box() {
     _success "sing-box 安装成功"
 }
 
-_install_cloudflared() {
-    if [ -f "${CLOUDFLARED_BIN}" ]; then return 0; fi
-    _info "正在安装 cloudflared..."
-    local arch=$(uname -m)
-    local arch_tag
-    case $arch in
-        x86_64|amd64) arch_tag='amd64' ;;
-        aarch64|arm64) arch_tag='arm64' ;;
-        armv7l) arch_tag='arm' ;;
-        *) _error "不支持的架构：$arch"; return 1 ;;
-    esac
-    local download_url="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${arch_tag}"
-    wget -qO "${CLOUDFLARED_BIN}" "$download_url" || { _error "cloudflared 下载失败!"; return 1; }
-    chmod +x "${CLOUDFLARED_BIN}"
-    _success "cloudflared 安装成功"
-}
-
 
 _install_cloudflared() {
     if [ -f "${CLOUDFLARED_BIN}" ]; then return 0; fi
@@ -694,7 +677,13 @@ _argo_keepalive() {
         fi
     done < <(jq -r 'keys[]' "$ARGO_METADATA_FILE")
 }
-_enable_argo_watchdog() { local j="* * * * * bash ${SELF_SCRIPT_PATH} keepalive >/dev/null 2>&1"; ! crontab -l 2>/dev/null | grep -Fq "$j" && (crontab -l 2>/dev/null; echo "$j") | crontab -; }
+
+_enable_argo_watchdog() { 
+    local j="* * * * * bash ${SELF_SCRIPT_PATH} keepalive >/dev/null 2>&1"
+    if ! crontab -l 2>/dev/null | grep -Fq "$j"; then
+        (crontab -l 2>/dev/null || true; echo "$j") | crontab -
+    fi
+}
 _disable_argo_watchdog() { local j="bash ${SELF_SCRIPT_PATH} keepalive"; crontab -l 2>/dev/null | grep -Fv "$j" | crontab -; }
 _uninstall_argo() {
     _stop_all_argo_tunnels
@@ -1424,7 +1413,7 @@ _modify_port() {
         local tag=$(echo "$node" | jq -r '.tag'); 
         if [[ "$tag" == *"-hop-"* ]] || [[ "$tag" == "argo_"* ]]; then continue; fi
         if [ -f "$ARGO_METADATA_FILE" ] && jq -e ".\"$tag\"" "$ARGO_METADATA_FILE" >/dev/null 2>&1; then continue; fi
-        local type=$(echo "$node" | jq -r '.type'); local port=$(echo "$node" | jq -r '.listen_port')
+        local 输入=$(echo "$node" | jq -r '.type'); local port=$(echo "$node" | jq -r '.listen_port')
         tags+=("$tag"); ports+=("$port"); types+=("$type")
         local dn=$(jq -r --arg t "$tag" '.[$t].name // empty' "$METADATA_FILE"); if [ -z "$dn" ]; then dn=$(echo "$tag" | sed "s/_${port}$//" | tr '_' ' '); fi; names+=("$dn")
         echo -e "  ${CYAN}$i)${NC} ${dn} (${type}) @ ${port}"; ((i++))
