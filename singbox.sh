@@ -219,16 +219,17 @@ _set_beijing_timezone() {
         fi
     fi
     
-    _success "时区已修正为北京时间"
+    _success "时区已修改为北京时间"
 
     # [关键修复] 修改时区后，必须重启 crond 服务，否则定时任务仍按 UTC 执行
-    _info "正在重启定时任务服务以应用时区..."
+    _info "正在重启定时服务以应用时区..."
     if [ -n "${INIT_SYSTEM:-}" ] && [ "$INIT_SYSTEM" == "systemd" ]; then
         systemctl restart cron 2>/dev/null || systemctl restart crond 2>/dev/null
     elif [ -n "${INIT_SYSTEM:-}" ] && [ "$INIT_SYSTEM" == "openrc" ]; then
         rc-service crond restart 2>/dev/null
     fi
 }
+
 _install_sing_box() {
     _info "正在安装 sing-box..."
     local arch=$(uname -m)
@@ -239,10 +240,28 @@ _install_sing_box() {
         armv7l) arch_tag='armv7' ;;
         *) _error "不支持的架构：$arch"; exit 1 ;;
     esac
-    local api_url="https://api.github.com/repos/SagerNet/sing-box/releases/latest"
-    local download_url=$(curl -s "$api_url" | jq -r ".assets[] | select(.name | contains(\"linux-${arch_tag}.tar.gz\")) | .browser_download_url")
-    if [ -z "$download_url" ]; then _error "无法获取 sing-box 下载链接。"; exit 1; fi
-    wget -qO sing-box.tar.gz "$download_url" || { _error "下载失败!"; exit 1; }
+    
+    # 【优化方案】不使用 GitHub API，利用 latest 直接解析最新版本号
+    # 获取最新的 Tag 名称 (例如 v1.8.0)
+    local latest_version
+    latest_version=$(curl -sI https://github.com/SagerNet/sing-box/releases/latest | grep -i location | awk -F '/' '{print $NF}' | tr -d '\r')
+    
+    if [ -z "$latest_version" ]; then 
+        _error "无法获取 sing-box 最新版本号。"; exit 1; 
+    fi
+    
+    # 拼接稳定无依赖的直链
+    # 最新版 sing-box 压缩包通常不需要带上开头的 'v' (例如 sing-box-1.8.0-linux-amd64.tar.gz)
+    local version_num="${latest_version#v}"
+    local download_url="https://github.com/SagerNet/sing-box/releases/download/${latest_version}/sing-box-${version_num}-linux-${arch_tag}.tar.gz"
+
+    # 【优化】优先使用 wget，缺失则用 curl，提高兼容性
+    if command -v wget >/dev/null 2>&1; then
+        wget -qO sing-box.tar.gz "$download_url" || { _error "下载失败!"; exit 1; }
+    else
+        curl -LfsS "$download_url" -o sing-box.tar.gz || { _error "下载失败!"; exit 1; }
+    fi
+
     local temp_dir=$(mktemp -d)
     tar -xzf sing-box.tar.gz -C "$temp_dir"
     mv "$temp_dir/sing-box-"*"/sing-box" ${SINGBOX_BIN}
