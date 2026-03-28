@@ -162,6 +162,14 @@ _install_dependencies() {
     done
 
     if [ "$needs_install" = true ]; then 
+        # 【精准释放内存】只有在发现缺少依赖，真正准备运行 apt-get 之前，才停掉服务
+        if pgrep -f "sing-box" >/dev/null 2>&1 || pgrep -f "cloudflared" >/dev/null 2>&1; then
+            _info "检测到需要安装缺失依赖，正在临时停止旧服务以释放内存..."
+            _manage_service "stop" >/dev/null 2>&1 || true
+            pkill -f "cloudflared" >/dev/null 2>&1 || true
+            sleep 2
+        fi
+
         _info "正在预装依赖 (含计划任务服务)..."
         _pkg_install $pkgs
         
@@ -231,6 +239,14 @@ _set_beijing_timezone() {
 }
 
 _install_sing_box() {
+    # 【精准释放内存】只有在准备下载和解压 sing-box 核心前，才停掉服务
+    if pgrep -f "sing-box" >/dev/null 2>&1 || pgrep -f "cloudflared" >/dev/null 2>&1; then
+        _info "即将下载核心文件，正在临时停止服务释放内存..."
+        _manage_service "stop" >/dev/null 2>&1 || true
+        pkill -f "cloudflared" >/dev/null 2>&1 || true
+        sleep 2
+    fi
+
     _info "正在安装 sing-box..."
     local arch=$(uname -m)
     local arch_tag
@@ -1816,20 +1832,10 @@ main() {
     _set_beijing_timezone
     
     mkdir -p "${SINGBOX_DIR}" 2>/dev/null
-
-    # 【新增】安装前置防线：主动杀掉旧服务，为下载和安装腾出宝贵的几十兆内存
-    if pgrep -f "sing-box" >/dev/null 2>&1 || pgrep -f "cloudflared" >/dev/null 2>&1; then
-        _info "检测到已有服务运行，正在临时停止旧服务以释放安装所需的内存..."
-        _manage_service "stop" >/dev/null 2>&1 || true
-        # 兜底清理 cloudflared
-        pkill -f "cloudflared" >/dev/null 2>&1 || true
-        # 暂停2秒，确保内核真正回收了内存
-        sleep 2
-    fi
-
     _install_dependencies; _init_server_ip
     
     local first=false
+    
     if [ ! -f "${SINGBOX_BIN}" ]; then _install_sing_box; first=true; fi
     
     # 1. 初始化配置文件 (如果不存在)
