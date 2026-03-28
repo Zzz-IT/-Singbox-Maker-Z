@@ -1816,6 +1816,17 @@ main() {
     _set_beijing_timezone
     
     mkdir -p "${SINGBOX_DIR}" 2>/dev/null
+
+    # 【新增】安装前置防线：主动杀掉旧服务，为下载和安装腾出宝贵的几十兆内存
+    if pgrep -f "sing-box" >/dev/null 2>&1 || pgrep -f "cloudflared" >/dev/null 2>&1; then
+        _info "检测到已有服务运行，正在临时停止旧服务以释放安装所需的内存..."
+        _manage_service "stop" >/dev/null 2>&1 || true
+        # 兜底清理 cloudflared
+        pkill -f "cloudflared" >/dev/null 2>&1 || true
+        # 暂停2秒，确保内核真正回收了内存
+        sleep 2
+    fi
+
     _install_dependencies; _init_server_ip
     
     local first=false
