@@ -14,6 +14,8 @@ cleanup() {
     rm -rf -- "${tmp_dir}"
   fi
 }
+# 【新增这一行】注册钩子，确保无论脚本是正常结束还是报错退出，都会执行清理
+trap cleanup EXIT ERR INT TERM
 
 need_root() {
   if [[ ${EUID:-$(id -u)} -ne 0 ]]; then
