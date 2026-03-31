@@ -563,6 +563,78 @@ _add_argo_trojan_ws() {
     _success "Argo 节点创建成功！"
 }
 
+_add_argo_vless_grpc() {
+    _info " 创建 VLESS-gRPC + Argo 固定隧道节点 "
+    _install_cloudflared || return 1
+    
+    read -p "请输入 Argo 内部监听端口 (回车随机生成): " input_port
+    local port="$input_port"
+    if [[ -z "$port" ]] || [[ ! "$port" =~ ^[0-9]+$ ]]; then
+        port=$(shuf -i 10000-60000 -n 1)
+        _info "已随机分配内部端口: ${port}"
+    fi
+    
+    read -p "请输入 gRPC ServiceName (回车随机生成): " service_name
+    [ -z "$service_name" ] && service_name=$(${SINGBOX_BIN} generate rand --hex 8)
+    
+    echo ""
+    echo -e "${YELLOW}注意: gRPC 协议强制使用【固定隧道】，请确保在 CF 后台已开启 HTTP2/gRPC 支持！${NC}"
+    echo -e "${CYAN}────────────────────────────────────────────────────────${NC}"
+    echo -e "${CYAN} 固定隧道 Token 获取指南${NC} "
+    echo -e "${CYAN} 固定隧道 Token 获取指南${NC} "
+    echo "  1. 访问 https://one.dash.cloudflare.com/"
+    echo "  2. 进入 Networks -> Tunnels -> Create a tunnel"
+    echo "  3. 选择 Cloudflared，点击 Next"
+    echo "  4. 设置隧道名称，保存"
+    echo "  5. 在 'Install and run a connector' 页面，选择 Debian -> 64-bit"
+    echo "  6. 复制下方出现的安装命令 (通常以 sudo cloudflared service install ... 开头)"
+    echo "  7. 将完整的命令粘贴到下方即可，脚本会自动提取 Token"
+    echo -e "${CYAN}────────────────────────────────────────────────────────${NC}"
+    
+    local type="fixed"
+    local token=""
+    local domain=""
+
+    read -p "请粘贴 Token 或 完整安装命令: " input_token
+    token=$(echo "$input_token" | grep -oE 'ey[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+' | head -1)
+    [ -z "$token" ] && token=$(echo "$input_token" | grep -oE 'ey[A-Za-z0-9_-]{20,}' | head -1)
+    [ -z "$token" ] && token="$input_token"
+    
+    if [ -z "$token" ]; then _error "未识别到有效的 Token！"; return 1; fi
+    _info "已识别 Token (前20位): ${token:0:20}..."
+    
+    echo ""
+    read -p "请输入该 Tunnel 绑定的域名 (例如 tunnel.example.com): " domain
+    if [ -z "$domain" ]; then _error "域名不能为空"; return 1; fi
+
+    local default_name="Argo-Vless-gRPC" 
+    read -p "请输入节点名称 (默认: ${default_name}): " name
+    name=${name:-$default_name}
+    
+    local safe_name=$(_sanitize_tag "$name")
+    local tag="argo_vless_grpc_${port}_${safe_name}"
+    local uuid=$(${SINGBOX_BIN} generate uuid)
+    
+    # 组装 sing-box inbound
+    local inbound=$(jq -n --arg t "$tag" --arg p "$port" --arg u "$uuid" --arg s "$service_name" '{"type":"vless","tag":$t,"listen":"127.0.0.1","listen_port":($p|tonumber),"users":[{"uuid":$u,"flow":""}],"transport":{"type":"grpc","service_name":$s}}')
+    _atomic_modify_json "$CONFIG_FILE" ".inbounds += [$inbound]" || return 1
+    
+    _manage_service "restart"; sleep 2
+    
+    # 直接启动固定隧道
+    _start_argo_tunnel "$port" "vless-grpc" "$token" || return 1
+    
+    # 保存元数据
+    local meta=$(jq -n --arg t "$tag" --arg n "$name" --arg d "$domain" --arg p "$port" --arg u "$uuid" --arg w "$service_name" --arg ty "$type" --arg tok "$token" '{($t):{name:$n,domain:$d,local_port:($p|tonumber),uuid:$u,path:$w,protocol:"vless-grpc",type:$ty,token:$tok}}')
+    [ ! -f "$ARGO_METADATA_FILE" ] && echo '{}' > "$ARGO_METADATA_FILE"
+    _atomic_modify_json "$ARGO_METADATA_FILE" ". + $meta"
+    
+    local proxy=$(jq -n --arg n "$name" --arg s "$domain" --arg u "$uuid" --arg w "$service_name" '{"name":$n,"type":"vless","server":$s,"port":443,"uuid":$u,"tls":true,"network":"grpc","servername":$s,"grpc-opts":{"grpc-service-name":$w}}')
+    _add_node_to_yaml "$proxy"
+    _enable_argo_watchdog
+    _success "Argo gRPC 固定节点创建成功！"
+}
+
 _view_argo_nodes() {
     _info "   Argo 节点列表    "
     if [ ! -f "$ARGO_METADATA_FILE" ] || [ "$(jq 'length' "$ARGO_METADATA_FILE")" -eq 0 ]; then
@@ -599,6 +671,8 @@ _view_argo_nodes() {
              elif [[ "$protocol" == "trojan-ws" ]]; then
                  local safe_pw=$(_url_encode "$password")
                  link="trojan://${safe_pw}@${domain}:443?security=tls&type=ws&host=${domain}&path=${safe_path}&sni=${domain}#${safe_name}"
+             elif [[ "$protocol" == "vless-grpc" ]]; then
+                 link="vless://${uuid}@${domain}:443?encryption=none&security=tls&type=grpc&serviceName=${safe_path}&sni=${domain}#${safe_name}"
              fi
              [ -n "$link" ] && echo -e "  ${YELLOW}链接:${NC} $link"
         fi
@@ -748,13 +822,14 @@ _argo_menu() {
         # 选项区
         echo -e "  ${WHITE}01.${NC}  部署 VLESS 隧道"
         echo -e "  ${WHITE}02.${NC}  部署 Trojan 隧道"
+        echo -e "  ${WHITE}03.${NC}  部署 VLESS-gRPC 隧道"
         echo -e ""
-        echo -e "  ${WHITE}03.${NC}  查看节点详情"
-        echo -e "  ${WHITE}04.${NC}  删除配置节点"
+        echo -e "  ${WHITE}04.${NC}  查看节点详情"
+        echo -e "  ${WHITE}05.${NC}  删除配置节点"
         echo -e ""
-        echo -e "  ${WHITE}05.${NC}  重启服务"
-        echo -e "  ${WHITE}06.${NC}  停止服务"
-        echo -e "  ${WHITE}07.${NC}  卸载服务"  # <--- 补上了这个漏掉的选项
+        echo -e "  ${WHITE}06.${NC}  重启服务"
+        echo -e "  ${WHITE}07.${NC}  停止服务"
+        echo -e "  ${WHITE}08.${NC}  卸载服务"  # <--- 补上了这个漏掉的选项
         echo -e ""
         echo -e "  ${GREY}─────────────────────────────────────────────${NC}"
         echo -e "  ${WHITE}00.${NC}  退出系统"
@@ -766,11 +841,12 @@ _argo_menu() {
         case $c in
             1|01) _add_argo_vless_ws ;;
             2|02) _add_argo_trojan_ws ;;
-            3|03) _view_argo_nodes ;;
-            4|04) _delete_argo_node ;;
-            5|05) _restart_argo_tunnel_menu ;;
-            6|06) _stop_argo_menu ;;
-            7|07) _uninstall_argo ;;
+            3|03) _add_argo_vless_grpc ;;
+            4|04) _view_argo_nodes ;;
+            5|05) _delete_argo_node ;;
+            6|06) _restart_argo_tunnel_menu ;;
+            7|07) _stop_argo_menu ;;
+            8|08) _uninstall_argo ;;
             0|00) return ;;
             *) echo -e "\n  ${GREY}无效输入，请重试...${NC}"; sleep 1 ;;
         esac
